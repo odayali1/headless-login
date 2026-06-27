@@ -15,13 +15,11 @@ import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
 import { initSmartRefresh, getSmartRefreshStatus, isSmartRefreshEnabled, setSmartRefreshEnabled } from './lib/smart-refresh.js';
 
-import { markProfileFailed } from './lib/profile.js';
+import { markProfileFailed, loadProfile, CANONICAL_TARGET, deleteAllProfilesForEmail } from './lib/profile.js';
 
 import { refreshAccountToken } from './lib/account-actions.js';
 
 import { checkAccountSoftban } from './lib/softban-check.js';
-
-import { loadProfile } from './lib/profile.js';
 
 import {
   saveAccountCredentials,
@@ -326,11 +324,11 @@ app.delete('/api/accounts/:email/:target', async (req, res) => {
 
   const fs = await import('node:fs/promises');
 
-  const { profilePath } = await import('./lib/profile.js');
+  const { deleteAllProfilesForEmail, CANONICAL_TARGET } = await import('./lib/profile.js');
 
   try {
 
-    await fs.unlink(profilePath(email, target));
+    await deleteAllProfilesForEmail(email);
 
   } catch {
 
@@ -340,7 +338,7 @@ app.delete('/api/accounts/:email/:target', async (req, res) => {
 
   try {
 
-    await fs.rm(firefoxProfileDir(email, target), { recursive: true, force: true });
+    await fs.rm(firefoxProfileDir(email, CANONICAL_TARGET), { recursive: true, force: true });
 
   } catch {
 
@@ -348,9 +346,9 @@ app.delete('/api/accounts/:email/:target', async (req, res) => {
 
   }
 
-  deleteAccountCredentials(email, target);
+  deleteAccountCredentials(email);
 
-  cancelQueued({ email, target });
+  cancelQueued({ email, target: CANONICAL_TARGET });
 
   broadcastAccounts();
 
@@ -501,18 +499,12 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
   const { email, target } = req.params;
   const { skipBackupEmail = true, loginAs } = req.body || {};
-  const loginTarget = resolveLoginTarget(target, loginAs);
+  const loginVia = resolveLoginVia(loginAs);
 
-  if (!TARGETS[loginTarget]) {
-
-    return res.status(400).json({ error: 'Invalid target.' });
-
-  }
-
-  const stored = getAccountPasswordWithFallback(email, loginTarget);
+  const stored = getAccountPasswordWithFallback(email, CANONICAL_TARGET);
 
   if (!stored) {
-    const row = getAccountRecord(email, target) || getAccountRecord(email, loginTarget);
+    const row = getAccountRecord(email);
     const msg = row?.password_enc
       ? 'Password is saved but cannot be decrypted on this server. Ensure data/.credentials-key was imported, or re-upload the batch CSV with passwords.'
       : 'No saved password — log in once from the form.';
@@ -521,17 +513,17 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
 
 
-  const id = createJob(email, loginTarget, 'camoufox', 'Re-login queued…');
+  const id = createJob(email, CANONICAL_TARGET, 'camoufox', 'Re-login queued…');
 
-  res.json({ id, status: 'queued', target: loginTarget });
+  res.json({ id, status: 'queued', target: CANONICAL_TARGET, loginVia });
 
 
 
   enqueueLogin(() =>
 
-    runJob(id, email, stored, loginTarget, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
+    runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
 
-      await markProfileFailed(email, loginTarget, err.message).catch(() => {});
+      await markProfileFailed(email, err.message).catch(() => {});
 
       updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
 
@@ -557,7 +549,7 @@ app.post('/api/accounts/:email/:target/check-softban', async (req, res) => {
 
   try {
 
-    const saved = await loadProfile(email, target);
+    const saved = await loadProfile(email);
 
     if (!saved?.state) {
 
@@ -579,30 +571,31 @@ app.post('/api/accounts/:email/:target/check-softban', async (req, res) => {
 
 });
 
-function resolveLoginTarget(accountTarget, loginAs) {
+function resolveLoginVia(loginAs) {
   const override = String(loginAs || '').trim();
   if (override && TARGETS[override]) return override;
-  return accountTarget || 'outlook';
+  return CANONICAL_TARGET;
 }
 
 async function queueAccountsAction(action, accounts, { label = 'bulk', skipBackupEmail = true, loginAs = '' } = {}) {
   const accepted = [];
+  const loginVia = resolveLoginVia(loginAs);
   for (const acc of accounts) {
-    const effectiveTarget = resolveLoginTarget(acc.target, loginAs);
+    const email = acc.email;
     if (action === 'delete') {
-      deleteAccountCredentials(acc.email, acc.target);
-      cancelQueued({ email: acc.email, target: acc.target });
-      accepted.push({ email: acc.email, target: acc.target, status: 'deleted' });
+      deleteAccountCredentials(email);
+      cancelQueued({ email, target: CANONICAL_TARGET });
+      accepted.push({ email, target: CANONICAL_TARGET, status: 'deleted' });
       continue;
     }
     if (action === 'refresh') {
-      const id = createJob(acc.email, acc.target, 'camoufox', `${label} refresh queued…`);
-      accepted.push({ email: acc.email, target: acc.target, jobId: id });
+      const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} refresh queued…`);
+      accepted.push({ email, target: CANONICAL_TARGET, jobId: id });
       enqueueLogin(async () => {
         try {
           updateJob(id, { status: 'running', message: 'Refreshing LiveProfileCard token…' });
           await beforeAccountLogin((step, message) => jobLog(id, step, message));
-          const result = await refreshAccountToken(acc.email, acc.target, {
+          const result = await refreshAccountToken(email, CANONICAL_TARGET, {
             engine: 'camoufox',
             jobId: id,
             onProgress: ({ step, message }) => jobLog(id, step, message),
@@ -613,41 +606,41 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         }
-      }, { jobId: id, label: `${acc.email} ${label} refresh` });
+      }, { jobId: id, label: `${email} ${label} refresh` });
       continue;
     }
 
     if (action === 'relogin') {
-      const stored = getAccountPasswordWithFallback(acc.email, effectiveTarget);
+      const stored = getAccountPasswordWithFallback(email, CANONICAL_TARGET);
       if (!stored) continue;
-      const id = createJob(acc.email, effectiveTarget, 'camoufox', `${label} re-login queued…`);
-      accepted.push({ email: acc.email, target: effectiveTarget, jobId: id });
+      const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} re-login queued…`);
+      accepted.push({ email, target: CANONICAL_TARGET, loginVia, jobId: id });
       enqueueLogin(() =>
-        runJob(id, acc.email, stored, effectiveTarget, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
-          await markProfileFailed(acc.email, effectiveTarget, err.message).catch(() => {});
+        runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
+          await markProfileFailed(email, err.message).catch(() => {});
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         })
-      , { jobId: id, label: `${acc.email} ${label} re-login` });
+      , { jobId: id, label: `${email} ${label} re-login` });
       continue;
     }
 
     if (action === 'check-softban') {
-      const id = createJob(acc.email, acc.target, 'camoufox', `${label} softban check queued…`);
-      accepted.push({ email: acc.email, target: acc.target, jobId: id });
+      const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} softban check queued…`);
+      accepted.push({ email, target: CANONICAL_TARGET, jobId: id });
       enqueueLogin(async () => {
         try {
           updateJob(id, { status: 'running', message: 'Checking softban status…' });
-          const saved = await loadProfile(acc.email, acc.target);
+          const saved = await loadProfile(email);
           if (!saved?.state) throw new Error('No saved profile — log in first.');
-          const result = await checkAccountSoftban(acc.email, acc.target, saved.state.tokens);
+          const result = await checkAccountSoftban(email, CANONICAL_TARGET, saved.state.tokens);
           updateJob(id, { status: 'success', message: result.message || 'Softban check done', result, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         } catch (err) {
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         }
-      }, { jobId: id, label: `${acc.email} softban check` });
+      }, { jobId: id, label: `${email} softban check` });
     }
   }
   return accepted;
@@ -677,14 +670,14 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
 
 app.post('/api/groups/:group/action', async (req, res) => {
   const group = String(req.params.group || '').trim();
-  const { action, target: filterTarget = '', loginAs = '', skipBackupEmail = true } = req.body || {};
+  const { action, loginAs = '', skipBackupEmail = true } = req.body || {};
   if (!group) return res.status(400).json({ error: 'Group is required.' });
   if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
     return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
   }
 
   const accounts = (await listAccounts()).filter(
-    (a) => (a.group || '').toLowerCase() === group.toLowerCase() && (!filterTarget || a.target === filterTarget)
+    (a) => (a.group || '').toLowerCase() === group.toLowerCase()
   );
   if (accounts.length === 0) return res.status(404).json({ error: `No accounts in group "${group}"` });
 
@@ -830,7 +823,9 @@ app.post('/api/login', async (req, res) => {
 
   }
 
-  if (!TARGETS[target]) {
+  const loginVia = target;
+
+  if (!TARGETS[loginVia]) {
 
     return res.status(400).json({ error: `Invalid target. Use: ${Object.keys(TARGETS).join(', ')}` });
 
@@ -846,7 +841,7 @@ app.post('/api/login', async (req, res) => {
 
     email: email.trim(),
 
-    target,
+    target: CANONICAL_TARGET,
 
     engine: 'camoufox',
 
@@ -860,20 +855,20 @@ app.post('/api/login', async (req, res) => {
 
   broadcast('job-stats', jobStats());
 
-  res.json({ id, status: 'queued' });
+  res.json({ id, status: 'queued', target: CANONICAL_TARGET, loginVia });
 
 
 
-  saveAccountCredentials(email.trim(), target, password, 'camoufox');
-  if (group) setAccountGroup(email.trim(), target, group);
+  saveAccountCredentials(email.trim(), CANONICAL_TARGET, password, 'camoufox');
+  if (group) setAccountGroup(email.trim(), CANONICAL_TARGET, group);
 
 
 
   enqueueLogin(() =>
 
-    runJob(id, email.trim(), password, target, 'camoufox', headless, { skipBackupEmail }).catch(async (err) => {
+    runJob(id, email.trim(), password, loginVia, 'camoufox', headless, { skipBackupEmail }).catch(async (err) => {
 
-      await markProfileFailed(email.trim(), target, err.message).catch(() => {});
+      await markProfileFailed(email.trim(), err.message).catch(() => {});
 
       updateJob(id, { status: 'failed', message: err.message, error: err.stack });
 
@@ -890,11 +885,16 @@ app.post('/api/login', async (req, res) => {
 app.post('/api/login/batch', async (req, res) => {
 
   const { accounts = [], target = 'outlook', headless = true, group = '', skipBackupEmail = true } = req.body || {};
+  const loginVia = target;
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
 
     return res.status(400).json({ error: 'Provide accounts: [{ email, password }, ...]' });
 
+  }
+
+  if (!TARGETS[loginVia]) {
+    return res.status(400).json({ error: `Invalid target. Use: ${Object.keys(TARGETS).join(', ')}` });
   }
 
 
@@ -909,7 +909,7 @@ app.post('/api/login/batch', async (req, res) => {
 
   for (const acc of validAccounts) {
 
-    cancelQueued({ email: acc.email.trim(), target });
+    cancelQueued({ email: acc.email.trim(), target: CANONICAL_TARGET });
 
     const id = uuidv4();
 
@@ -919,7 +919,7 @@ app.post('/api/login/batch', async (req, res) => {
 
       email: acc.email.trim(),
 
-      target,
+      target: CANONICAL_TARGET,
 
       engine: 'camoufox',
 
@@ -949,8 +949,8 @@ app.post('/api/login/batch', async (req, res) => {
 
   for (const acc of validAccounts) {
 
-    saveAccountCredentials(acc.email.trim(), target, acc.password, 'camoufox');
-    if (group) setAccountGroup(acc.email.trim(), target, group);
+    saveAccountCredentials(acc.email.trim(), CANONICAL_TARGET, acc.password, 'camoufox');
+    if (group) setAccountGroup(acc.email.trim(), CANONICAL_TARGET, group);
 
   }
 
@@ -980,11 +980,11 @@ app.post('/api/login/batch', async (req, res) => {
 
       try {
 
-        await runJob(id, acc.email.trim(), acc.password, target, 'camoufox', headless, { skipBackupEmail });
+        await runJob(id, acc.email.trim(), acc.password, loginVia, 'camoufox', headless, { skipBackupEmail });
 
       } catch (err) {
 
-        await markProfileFailed(acc.email.trim(), target, err.message).catch(() => {});
+        await markProfileFailed(acc.email.trim(), err.message).catch(() => {});
 
         updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
 
@@ -1004,7 +1004,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
   if (isCancelled(id)) return;
 
-  if (!getAccountPasswordWithFallback(email, target)) {
+  if (!getAccountPasswordWithFallback(email, CANONICAL_TARGET)) {
 
     updateJob(id, { status: 'cancelled', message: 'Account removed — job skipped.', finishedAt: new Date().toISOString() });
 

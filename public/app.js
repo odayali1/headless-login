@@ -8,7 +8,7 @@ let showFinishedJobs = false;
 let renderScheduled = false;
 let logModalState = { email: null, target: null, jobId: null };
 let groups = [];
-let accountFilters = { group: '', health: '', search: '', target: '' };
+let accountFilters = { group: '', health: '', search: '' };
 
 const ACTIVE = new Set(['queued', 'starting', 'running']);
 
@@ -36,7 +36,6 @@ const els = {
   refreshAccountsBtn: document.getElementById('refreshAccountsBtn'),
   groupFilter: document.getElementById('groupFilter'),
   healthFilter: document.getElementById('healthFilter'),
-  targetFilter: document.getElementById('targetFilter'),
   actionTarget: document.getElementById('actionTarget'),
   searchInput: document.getElementById('searchInput'),
   assignGroupInput: document.getElementById('assignGroupInput'),
@@ -59,6 +58,7 @@ const els = {
   statSoftban: document.getElementById('statSoftban'),
   statMfa: document.getElementById('statMfa'),
   statOther: document.getElementById('statOther'),
+  statNotLoggedIn: document.getElementById('statNotLoggedIn'),
   statTotal: document.getElementById('statTotal'),
   smartRefreshToggle: document.getElementById('smartRefreshToggle'),
   smartRefreshLabel: document.getElementById('smartRefreshLabel'),
@@ -76,12 +76,22 @@ function renderAccountStats() {
   const s = accountStats;
   const other =
     s.other ??
-    Math.max(0, (s.total || 0) - (s.available || 0) - (s.needs_refresh || 0) - (s.failed || 0) - (s.softban || 0) - (s.mfa_required || 0));
+    Math.max(
+      0,
+      (s.total || 0) -
+        (s.available || 0) -
+        (s.needs_refresh || 0) -
+        (s.failed || 0) -
+        (s.softban || 0) -
+        (s.mfa_required || 0) -
+        (s.not_logged_in || 0)
+    );
   if (els.statAvailable) els.statAvailable.textContent = s.available ?? 0;
   if (els.statNeedsRefresh) els.statNeedsRefresh.textContent = s.needs_refresh ?? 0;
   if (els.statFailed) els.statFailed.textContent = s.failed ?? 0;
   if (els.statSoftban) els.statSoftban.textContent = s.softban ?? 0;
   if (els.statMfa) els.statMfa.textContent = s.mfa_required ?? 0;
+  if (els.statNotLoggedIn) els.statNotLoggedIn.textContent = s.not_logged_in ?? 0;
   if (els.statOther) els.statOther.textContent = other;
   if (els.statTotal) els.statTotal.textContent = s.total ?? 0;
 }
@@ -512,7 +522,7 @@ function renderAccounts() {
         <tr>
           <td>${escapeHtml(acc.email)}</td>
           <td><code class="scope-tag">${escapeHtml(acc.group || '—')}</code></td>
-          <td>${escapeHtml(acc.target)}</td>
+          <td>${escapeHtml(acc.loginVia || 'outlook')}</td>
           <td><span class="badge health_${escapeHtml(acc.health || acc.status)}">${escapeHtml(acc.healthLabel || acc.statusLabel)}</span></td>
           <td>${softbanBadge}</td>
           <td>${formatTime(acc.lastLoginAt)}</td>
@@ -751,8 +761,7 @@ function getLoginAsOverride() {
 
 function loginAsLabel() {
   const v = getLoginAsOverride();
-  if (v === 'outlook') return ' as Outlook';
-  if (v === 'teams') return ' as Teams';
+  if (v === 'teams') return ' via Teams';
   return '';
 }
 
@@ -760,7 +769,6 @@ function currentFilteredAccounts() {
   const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
   return accounts.filter((acc) => {
     if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (accountFilters.target && (acc.target || '') !== accountFilters.target) return false;
     if (accountFilters.health === 'needs_token') {
       if (!NEEDS_TOKEN.has(acc.health || '')) return false;
     } else if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
@@ -777,10 +785,6 @@ els.healthFilter?.addEventListener('change', () => {
   accountFilters.health = els.healthFilter.value || '';
   renderAccounts();
 });
-els.targetFilter?.addEventListener('change', () => {
-  accountFilters.target = els.targetFilter.value || '';
-  renderAccounts();
-});
 els.searchInput?.addEventListener('input', () => {
   accountFilters.search = els.searchInput.value || '';
   renderAccounts();
@@ -792,7 +796,7 @@ els.assignGroupBtn?.addEventListener('click', async () => {
   if (!selected.length) return alert('No accounts in current filter.');
   const payload = {
     group,
-    accounts: selected.map((a) => ({ email: a.email, target: a.target })),
+    accounts: selected.map((a) => ({ email: a.email, target: 'outlook' })),
   };
   const res = await fetch('/api/groups/assign', {
     method: 'POST',
@@ -813,8 +817,7 @@ async function runGroupAction(action) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action,
-      target: accountFilters.target || '',
-      loginAs,
+      loginAs: getLoginAsOverride(),
       skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
     }),
   });
@@ -834,7 +837,7 @@ async function runFilteredAction(action) {
   const verb = action === 'relogin' ? 'Re-login' : 'Refresh token for';
   const loginAs = getLoginAsOverride();
   if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}?`)) return;
-  const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: a.target }));
+  const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: 'outlook' }));
   const res = await fetch('/api/accounts/bulk-action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

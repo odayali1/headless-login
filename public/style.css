@@ -214,6 +214,7 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
 .badge.health_session_only, .badge.health_other { background: rgba(91, 141, 239, 0.15); color: var(--accent); }
 
 .stat-card.session-only .stat-num { color: var(--accent); }
+.stat-card.not-logged-in .stat-num { color: var(--muted); }
 
 .queue-banner-wrap { margin-bottom: 1rem; }
 
