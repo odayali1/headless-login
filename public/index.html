@@ -150,16 +150,19 @@
             <option value="softban">Softban</option>
             <option value="failed">Failed</option>
             <option value="session_only">Session only</option>
+            <option value="needs_token">Needs token (session + refresh + failed)</option>
             <option value="mfa_required">MFA</option>
           </select>
           <input type="text" id="assignGroupInput" placeholder="Group name" />
           <button type="button" class="btn ghost" id="assignGroupBtn">Assign group to filtered</button>
+          <button type="button" class="btn ghost" id="filteredRefreshBtn">Refresh filtered</button>
+          <button type="button" class="btn ghost" id="filteredReloginBtn">Re-login filtered</button>
           <button type="button" class="btn ghost" id="groupRefreshBtn">Refresh group</button>
           <button type="button" class="btn ghost" id="groupReloginBtn">Re-login group</button>
           <button type="button" class="btn ghost" id="groupSoftbanBtn">Softban check group</button>
           <button type="button" class="btn ghost" id="groupExportBtn">Export tokens group</button>
         </div>
-        <p class="hint">Camoufox persistent profile per account — same fingerprint every session. Re-login / Refresh token reuse saved session.</p>
+        <p class="hint">Each account has its own Camoufox profile and fingerprint (stable per email). After importing sessions from another machine, use Re-login filtered with health “Needs token” — not Refresh. Available accounts only need Refresh later.</p>
         <div class="accounts-table-wrap">
           <table class="accounts-table" id="accountsTable">
             <thead>

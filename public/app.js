@@ -40,6 +40,8 @@ const els = {
   assignGroupInput: document.getElementById('assignGroupInput'),
   assignGroupBtn: document.getElementById('assignGroupBtn'),
   groupRefreshBtn: document.getElementById('groupRefreshBtn'),
+  filteredRefreshBtn: document.getElementById('filteredRefreshBtn'),
+  filteredReloginBtn: document.getElementById('filteredReloginBtn'),
   groupReloginBtn: document.getElementById('groupReloginBtn'),
   groupSoftbanBtn: document.getElementById('groupSoftbanBtn'),
   groupExportBtn: document.getElementById('groupExportBtn'),
@@ -740,9 +742,12 @@ els.accountsBody.addEventListener('click', async (e) => {
 els.refreshAccountsBtn.addEventListener('click', () => loadAccounts());
 
 function currentFilteredAccounts() {
+  const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
   return accounts.filter((acc) => {
     if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
+    if (accountFilters.health === 'needs_token') {
+      if (!NEEDS_TOKEN.has(acc.health || '')) return false;
+    } else if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
     if (accountFilters.search && !String(acc.email || '').toLowerCase().includes(accountFilters.search.toLowerCase())) return false;
     return true;
   });
@@ -792,6 +797,29 @@ async function runGroupAction(action) {
   await loadAccounts();
 }
 
+async function runFilteredAction(action) {
+  const selected = currentFilteredAccounts();
+  if (!selected.length) return alert('No accounts match the current filter.');
+  const withPassword = selected.filter((a) => a.hasStoredPassword);
+  if (action === 'relogin' && withPassword.length === 0) {
+    return alert('No filtered accounts have a stored password. Re-login needs the password saved in the database.');
+  }
+  const count = action === 'relogin' ? withPassword.length : selected.length;
+  const verb = action === 'relogin' ? 'Re-login' : 'Refresh token for';
+  if (!confirm(`${verb} ${count} account(s) matching the current filter?`)) return;
+  const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: a.target }));
+  const res = await fetch('/api/accounts/bulk-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, accounts: list }),
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(data.error || 'Bulk action failed');
+  await loadAccounts();
+}
+
+els.filteredRefreshBtn?.addEventListener('click', () => runFilteredAction('refresh'));
+els.filteredReloginBtn?.addEventListener('click', () => runFilteredAction('relogin'));
 els.groupRefreshBtn?.addEventListener('click', () => runGroupAction('refresh'));
 els.groupReloginBtn?.addEventListener('click', () => runGroupAction('relogin'));
 els.groupSoftbanBtn?.addEventListener('click', () => runGroupAction('check-softban'));

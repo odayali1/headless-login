@@ -584,19 +584,7 @@ app.post('/api/accounts/:email/:target/check-softban', async (req, res) => {
 
 });
 
-app.post('/api/groups/:group/action', async (req, res) => {
-  const group = String(req.params.group || '').trim();
-  const { action, target = 'outlook' } = req.body || {};
-  if (!group) return res.status(400).json({ error: 'Group is required.' });
-  if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
-    return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
-  }
-
-  const accounts = (await listAccounts()).filter(
-    (a) => (a.group || '').toLowerCase() === group.toLowerCase() && (!target || a.target === target)
-  );
-  if (accounts.length === 0) return res.status(404).json({ error: `No accounts in group "${group}"` });
-
+async function queueAccountsAction(action, accounts, { label = 'bulk', skipBackupEmail = true } = {}) {
   const accepted = [];
   for (const acc of accounts) {
     if (action === 'delete') {
@@ -606,7 +594,7 @@ app.post('/api/groups/:group/action', async (req, res) => {
       continue;
     }
     if (action === 'refresh') {
-      const id = createJob(acc.email, acc.target, 'camoufox', `Group refresh queued (${group})…`);
+      const id = createJob(acc.email, acc.target, 'camoufox', `${label} refresh queued…`);
       accepted.push({ email: acc.email, target: acc.target, jobId: id });
       enqueueLogin(async () => {
         try {
@@ -623,27 +611,27 @@ app.post('/api/groups/:group/action', async (req, res) => {
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         }
-      }, { jobId: id, label: `${acc.email} group refresh` });
+      }, { jobId: id, label: `${acc.email} ${label} refresh` });
       continue;
     }
 
     if (action === 'relogin') {
       const stored = getAccountPassword(acc.email, acc.target);
       if (!stored) continue;
-      const id = createJob(acc.email, acc.target, 'camoufox', `Group re-login queued (${group})…`);
+      const id = createJob(acc.email, acc.target, 'camoufox', `${label} re-login queued…`);
       accepted.push({ email: acc.email, target: acc.target, jobId: id });
       enqueueLogin(() =>
-        runJob(id, acc.email, stored, acc.target, 'camoufox', true, { forceFresh: true, skipBackupEmail: true }).catch(async (err) => {
+        runJob(id, acc.email, stored, acc.target, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
           await markProfileFailed(acc.email, acc.target, err.message).catch(() => {});
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
         })
-      , { jobId: id, label: `${acc.email} group re-login` });
+      , { jobId: id, label: `${acc.email} ${label} re-login` });
       continue;
     }
 
     if (action === 'check-softban') {
-      const id = createJob(acc.email, acc.target, 'camoufox', `Softban check queued (${group})…`);
+      const id = createJob(acc.email, acc.target, 'camoufox', `${label} softban check queued…`);
       accepted.push({ email: acc.email, target: acc.target, jobId: id });
       enqueueLogin(async () => {
         try {
@@ -660,6 +648,45 @@ app.post('/api/groups/:group/action', async (req, res) => {
       }, { jobId: id, label: `${acc.email} softban check` });
     }
   }
+  return accepted;
+}
+
+app.post('/api/accounts/bulk-action', async (req, res) => {
+  const { action, accounts: list, skipBackupEmail = true } = req.body || {};
+  if (!Array.isArray(list) || list.length === 0) {
+    return res.status(400).json({ error: 'accounts array is required.' });
+  }
+  if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
+    return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
+  }
+
+  const normalized = list
+    .map((a) => ({ email: String(a.email || '').trim(), target: a.target || 'outlook' }))
+    .filter((a) => a.email && TARGETS[a.target]);
+
+  if (normalized.length === 0) {
+    return res.status(400).json({ error: 'No valid accounts in request.' });
+  }
+
+  const accepted = await queueAccountsAction(action, normalized, { label: 'Filtered', skipBackupEmail });
+  broadcastAccounts();
+  res.json({ ok: true, action, count: accepted.length, accepted });
+});
+
+app.post('/api/groups/:group/action', async (req, res) => {
+  const group = String(req.params.group || '').trim();
+  const { action, target = 'outlook' } = req.body || {};
+  if (!group) return res.status(400).json({ error: 'Group is required.' });
+  if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
+    return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
+  }
+
+  const accounts = (await listAccounts()).filter(
+    (a) => (a.group || '').toLowerCase() === group.toLowerCase() && (!target || a.target === target)
+  );
+  if (accounts.length === 0) return res.status(404).json({ error: `No accounts in group "${group}"` });
+
+  const accepted = await queueAccountsAction(action, accounts, { label: `Group ${group}`, skipBackupEmail: true });
 
   broadcastAccounts();
   res.json({ ok: true, group, action, count: accepted.length, accepted });
