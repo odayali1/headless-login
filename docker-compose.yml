@@ -8,6 +8,8 @@ services:
       - DATA_DIR=/app/data
       - CREDENTIALS_KEY=${CREDENTIALS_KEY}
       - CAMOUFOX_INSTALL_DIR=/opt/camoufox
+      - MOZ_DISABLE_CONTENT_SANDBOX=1
+      - MOZ_DISABLE_GMP_SANDBOX=1
     volumes:
       - headless-data:/app/data
 
