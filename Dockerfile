@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+# Do not use --ignore-scripts: better-sqlite3 needs its install script for the native .node binary
+RUN npm ci --omit=dev
 
 COPY . .
 

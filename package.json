@@ -7,7 +7,6 @@
     "start": "node server.js",
     "obscura": "node scripts/start-obscura.js",
     "camoufox:fetch": "camoufox-js fetch",
-    "postinstall": "camoufox-js fetch || true",
     "login:test": "node scripts/cli-login.js"
   },
   "dependencies": {
