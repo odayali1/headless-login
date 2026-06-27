@@ -1,6 +1,6 @@
 FROM node:22-bookworm-slim
 
-# Firefox/Camoufox runtime + tools for downloading/extracting the browser bundle
+# Firefox/Camoufox runtime libraries (browser binary installed at container start, not build)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl bzip2 xz-utils \
     libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
@@ -13,31 +13,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-# Skip postinstall fetch here — explicit retry step below (Coolify network can be flaky)
 RUN npm ci --omit=dev --ignore-scripts
 
 COPY . .
 
-ENV CAMOUFOX_INSTALL_DIR=/opt/camoufox
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV MOZ_DISABLE_CONTENT_SANDBOX=1
-ENV MOZ_DISABLE_GMP_SANDBOX=1
-
-# Production uses Camoufox only (proxy ON). Chromium fallback is dev/local only — skip install.
-RUN set -eux; \
-    for attempt in 1 2 3 4 5; do \
-      npx camoufox-js fetch && exit 0; \
-      echo "camoufox-js fetch attempt ${attempt} failed, retrying in 25s..."; \
-      sleep 25; \
-    done; \
-    echo "camoufox-js fetch failed after 5 attempts"; \
-    exit 1
-
 ENV NODE_ENV=production
 ENV PORT=3847
 ENV DATA_DIR=/app/data
+# Persisted on Coolify volume — survives redeploys; downloaded once on first start
+ENV CAMOUFOX_INSTALL_DIR=/app/data/camoufox
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/data/playwright
+ENV MOZ_DISABLE_CONTENT_SANDBOX=1
+ENV MOZ_DISABLE_GMP_SANDBOX=1
 
-RUN mkdir -p /app/data/profiles /app/screenshots /opt/camoufox
+RUN mkdir -p /app/data/profiles /app/screenshots
 
 EXPOSE 3847
 

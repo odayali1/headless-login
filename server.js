@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { v4 as uuidv4 } from 'uuid';
 
 import { isCamoufoxAvailable } from './lib/camoufox-browser.js';
+import { ensureCamoufoxInstalled } from './lib/ensure-camoufox.js';
 
 import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 
@@ -1088,12 +1089,13 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
 app.listen(PORT, async () => {
   await runStartupMigrations();
+  await ensureCamoufoxInstalled();
   const camoufox = await isCamoufoxAvailable();
   if (camoufox && isSmartRefreshEnabled()) {
     initSmartRefresh({ enqueue: enqueueLogin, log: (msg) => console.log(msg), onRefreshed: broadcastAccounts });
   } else if (!camoufox) {
     setSmartRefreshEnabled(false);
-    console.warn('[camoufox] Binary not found — smart refresh OFF. Ensure Dockerfile runs: npx camoufox-js fetch');
+    console.warn('[camoufox] Binary not available — smart refresh OFF. Check container logs for download errors.');
   }
   const proxy = getProxyStatus();
   console.log(`Dashboard: http://localhost:${PORT}`);
