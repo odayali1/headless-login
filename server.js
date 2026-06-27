@@ -57,6 +57,8 @@ import { importDataBackup } from './lib/data-import.js';
 
 import { DATA_DIR } from './lib/db.js';
 
+import { repairAllLaunchOptions } from './lib/camoufox-browser.js';
+
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -456,6 +458,7 @@ app.post('/api/data/import', requireApiKey, zipImportBody, async (req, res) => {
     }
 
     const result = importDataBackup(req.body, DATA_DIR);
+    await repairAllLaunchOptions();
 
     res.json({ ok: true, message: 'Data restored. Server restarting…', ...result });
 
@@ -1047,12 +1050,18 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
 app.listen(PORT, async () => {
   await runStartupMigrations();
-  initSmartRefresh({ enqueue: enqueueLogin, log: (msg) => console.log(msg), onRefreshed: broadcastAccounts });
+  const camoufox = await isCamoufoxAvailable();
+  if (camoufox && isSmartRefreshEnabled()) {
+    initSmartRefresh({ enqueue: enqueueLogin, log: (msg) => console.log(msg), onRefreshed: broadcastAccounts });
+  } else if (!camoufox) {
+    setSmartRefreshEnabled(false);
+    console.warn('[camoufox] Binary not found — smart refresh OFF. Ensure Dockerfile runs: npx camoufox-js fetch');
+  }
   const proxy = getProxyStatus();
   console.log(`Dashboard: http://localhost:${PORT}`);
   console.log(`Engine: Camoufox (all operations)`);
   console.log(`Proxy: ${proxy.enabled ? `ON ${proxy.host}:${proxy.port}` : 'OFF'}`);
   console.log(`Smart refresh: ${isSmartRefreshEnabled() ? 'ON' : 'OFF'}`);
-  const camoufox = await isCamoufoxAvailable();
   if (!camoufox) console.warn('Run: npm run camoufox:fetch');
+  else console.log('Camoufox: ready');
 });
