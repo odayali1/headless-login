@@ -811,7 +811,11 @@ async function runFilteredAction(action) {
   const res = await fetch('/api/accounts/bulk-action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, accounts: list }),
+    body: JSON.stringify({
+      action,
+      accounts: list,
+      skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+    }),
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || 'Bulk action failed');
