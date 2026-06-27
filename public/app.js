@@ -8,7 +8,7 @@ let showFinishedJobs = false;
 let renderScheduled = false;
 let logModalState = { email: null, target: null, jobId: null };
 let groups = [];
-let accountFilters = { group: '', health: '', search: '' };
+let accountFilters = { group: '', health: '', search: '', target: '' };
 
 const ACTIVE = new Set(['queued', 'starting', 'running']);
 
@@ -36,6 +36,8 @@ const els = {
   refreshAccountsBtn: document.getElementById('refreshAccountsBtn'),
   groupFilter: document.getElementById('groupFilter'),
   healthFilter: document.getElementById('healthFilter'),
+  targetFilter: document.getElementById('targetFilter'),
+  actionTarget: document.getElementById('actionTarget'),
   searchInput: document.getElementById('searchInput'),
   assignGroupInput: document.getElementById('assignGroupInput'),
   assignGroupBtn: document.getElementById('assignGroupBtn'),
@@ -718,7 +720,8 @@ els.accountsBody.addEventListener('click', async (e) => {
     if (!acc?.hasStoredPassword) {
       return alert('No saved password for this account. Log in once from the form above.');
     }
-    if (!confirm(`Re-login ${email} using saved password?`)) return;
+    const loginAs = getLoginAsOverride();
+    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password?`)) return;
     actionBtn.disabled = true;
     try {
       const res = await fetch(accountApiPath(email, target, 'relogin'), {
@@ -726,6 +729,7 @@ els.accountsBody.addEventListener('click', async (e) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           engine: 'auto',
+          loginAs: loginAs || undefined,
           skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
         }),
       });
@@ -741,10 +745,22 @@ els.accountsBody.addEventListener('click', async (e) => {
 
 els.refreshAccountsBtn.addEventListener('click', () => loadAccounts());
 
+function getLoginAsOverride() {
+  return els.actionTarget?.value || '';
+}
+
+function loginAsLabel() {
+  const v = getLoginAsOverride();
+  if (v === 'outlook') return ' as Outlook';
+  if (v === 'teams') return ' as Teams';
+  return '';
+}
+
 function currentFilteredAccounts() {
   const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
   return accounts.filter((acc) => {
     if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
+    if (accountFilters.target && (acc.target || '') !== accountFilters.target) return false;
     if (accountFilters.health === 'needs_token') {
       if (!NEEDS_TOKEN.has(acc.health || '')) return false;
     } else if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
@@ -759,6 +775,10 @@ els.groupFilter?.addEventListener('change', () => {
 });
 els.healthFilter?.addEventListener('change', () => {
   accountFilters.health = els.healthFilter.value || '';
+  renderAccounts();
+});
+els.targetFilter?.addEventListener('change', () => {
+  accountFilters.target = els.targetFilter.value || '';
   renderAccounts();
 });
 els.searchInput?.addEventListener('input', () => {
@@ -787,10 +807,16 @@ els.assignGroupBtn?.addEventListener('click', async () => {
 async function runGroupAction(action) {
   const group = accountFilters.group || String(els.assignGroupInput?.value || '').trim();
   if (!group) return alert('Pick a group from filter or type a group name first.');
+  const loginAs = getLoginAsOverride();
   const res = await fetch(`/api/groups/${encodeURIComponent(group)}/action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({
+      action,
+      target: accountFilters.target || '',
+      loginAs,
+      skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+    }),
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || 'Group action failed');
@@ -806,7 +832,8 @@ async function runFilteredAction(action) {
   }
   const count = action === 'relogin' ? withPassword.length : selected.length;
   const verb = action === 'relogin' ? 'Re-login' : 'Refresh token for';
-  if (!confirm(`${verb} ${count} account(s) matching the current filter?`)) return;
+  const loginAs = getLoginAsOverride();
+  if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}?`)) return;
   const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: a.target }));
   const res = await fetch('/api/accounts/bulk-action', {
     method: 'POST',
@@ -814,6 +841,7 @@ async function runFilteredAction(action) {
     body: JSON.stringify({
       action,
       accounts: list,
+      loginAs,
       skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
     }),
   });

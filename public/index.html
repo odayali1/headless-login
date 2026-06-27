@@ -153,6 +153,16 @@
             <option value="needs_token">Needs token (session + refresh + failed)</option>
             <option value="mfa_required">MFA</option>
           </select>
+          <select id="targetFilter">
+            <option value="">All targets</option>
+            <option value="outlook">Outlook only</option>
+            <option value="teams">Teams only</option>
+          </select>
+          <select id="actionTarget" title="Re-login target override">
+            <option value="">Re-login: each account's target</option>
+            <option value="outlook">Re-login as Outlook</option>
+            <option value="teams">Re-login as Teams</option>
+          </select>
           <input type="text" id="assignGroupInput" placeholder="Group name" />
           <button type="button" class="btn ghost" id="assignGroupBtn">Assign group to filtered</button>
           <button type="button" class="btn ghost" id="filteredRefreshBtn">Refresh filtered</button>
@@ -162,7 +172,7 @@
           <button type="button" class="btn ghost" id="groupSoftbanBtn">Softban check group</button>
           <button type="button" class="btn ghost" id="groupExportBtn">Export tokens group</button>
         </div>
-        <p class="hint">Each account has its own Camoufox profile and fingerprint (stable per email). After importing sessions from another machine, use Re-login filtered with health “Needs token” — not Refresh. Available accounts only need Refresh later.</p>
+        <p class="hint">Each account has its own Camoufox profile per target (outlook / teams). Teams re-login also captures LiveProfileCard token via Outlook mail. Use <strong>Re-login as</strong> to switch target for bulk actions.</p>
         <div class="accounts-table-wrap">
           <table class="accounts-table" id="accountsTable">
             <thead>
