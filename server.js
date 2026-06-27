@@ -53,6 +53,10 @@ import { createRefreshJobQueue } from './lib/refresh-job.js';
 
 import { firefoxProfileDir } from './lib/camoufox-browser.js';
 
+import { importDataBackup } from './lib/data-import.js';
+
+import { DATA_DIR } from './lib/db.js';
+
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -428,6 +432,42 @@ app.use(
   })
 
 );
+
+
+
+const zipImportBody = express.raw({
+
+  type: ['application/zip', 'application/octet-stream'],
+
+  limit: '150mb',
+
+});
+
+
+
+app.post('/api/data/import', requireApiKey, zipImportBody, async (req, res) => {
+
+  try {
+
+    if (!req.body?.length) {
+
+      return res.status(400).json({ ok: false, error: 'Empty body — upload a .zip file.' });
+
+    }
+
+    const result = importDataBackup(req.body, DATA_DIR);
+
+    res.json({ ok: true, message: 'Data restored. Server restarting…', ...result });
+
+    setTimeout(() => process.exit(0), 1500);
+
+  } catch (err) {
+
+    res.status(500).json({ ok: false, error: err.message });
+
+  }
+
+});
 
 
 

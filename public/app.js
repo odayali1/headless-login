@@ -60,6 +60,10 @@ const els = {
   smartRefreshLabel: document.getElementById('smartRefreshLabel'),
   exportTokensBtn: document.getElementById('exportTokensBtn'),
   exportFailedRefreshBtn: document.getElementById('exportFailedRefreshBtn'),
+  importApiKey: document.getElementById('importApiKey'),
+  importZipFile: document.getElementById('importZipFile'),
+  importDataBtn: document.getElementById('importDataBtn'),
+  importStatus: document.getElementById('importStatus'),
 };
 
 let proxyState = { enabled: true };
@@ -137,6 +141,49 @@ function downloadExport(type) {
 
 els.exportTokensBtn?.addEventListener('click', () => downloadExport('tokens'));
 els.exportFailedRefreshBtn?.addEventListener('click', () => downloadExport('failed-refresh'));
+
+if (els.importApiKey) {
+  const savedKey = sessionStorage.getItem('importApiKey');
+  if (savedKey) els.importApiKey.value = savedKey;
+}
+
+els.importDataBtn?.addEventListener('click', async () => {
+  const file = els.importZipFile?.files?.[0];
+  const key = els.importApiKey?.value?.trim();
+  if (!file) {
+    alert('Choose data-backup.zip first.');
+    return;
+  }
+  if (!key) {
+    alert('Enter your API key (same as API_KEY in server env).');
+    return;
+  }
+  if (!confirm('This overwrites /app/data with the zip contents and restarts the server. Continue?')) return;
+
+  els.importDataBtn.disabled = true;
+  els.importStatus.textContent = 'Uploading…';
+
+  try {
+    const buf = await file.arrayBuffer();
+    const res = await fetch('/api/data/import', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/zip',
+      },
+      body: buf,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+
+    sessionStorage.setItem('importApiKey', key);
+    els.importStatus.textContent = `Restored ${data.profileCount} profiles, ${data.accountCount} DB accounts. Restarting…`;
+    setTimeout(() => location.reload(), 5000);
+  } catch (err) {
+    els.importStatus.textContent = err.message;
+    els.importDataBtn.disabled = false;
+  }
+});
 
 function renderProxyPill() {
   if (!els.proxyToggle) return;

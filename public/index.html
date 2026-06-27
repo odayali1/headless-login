@@ -108,6 +108,16 @@
           <button type="button" class="btn small export" id="exportTokensBtn">Export email + token (CSV)</button>
           <button type="button" class="btn small export-fail" id="exportFailedRefreshBtn">Export failed + refresh token (CSV)</button>
         </div>
+        <details class="import-panel">
+          <summary>Restore data backup (upload zip → persistent storage)</summary>
+          <p class="hint">Upload <code>data-backup.zip</code> from your laptop. Extracts into <code>/app/data</code> (Coolify volume). Server auto-restarts.</p>
+          <div class="import-row">
+            <input type="password" id="importApiKey" placeholder="API key (from env)" autocomplete="off" />
+            <input type="file" id="importZipFile" accept=".zip,application/zip" />
+            <button type="button" class="btn secondary" id="importDataBtn">Upload &amp; restore</button>
+          </div>
+          <p class="hint" id="importStatus"></p>
+        </details>
         <p class="hint"><strong>Available</strong> = token ready · <strong>Session only</strong> = logged in, no token (use Re-login) · Smart refresh renews tokens ~30 min before expiry.</p>
       </section>
 

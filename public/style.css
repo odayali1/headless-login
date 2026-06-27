@@ -176,6 +176,34 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
 .btn.small.export { background: rgba(62, 207, 142, 0.12); color: var(--success); border: 1px solid rgba(62, 207, 142, 0.35); }
 .btn.small.export-fail { background: rgba(240, 113, 120, 0.1); color: var(--error); border: 1px solid rgba(240, 113, 120, 0.35); }
 
+.import-panel {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
+.import-panel summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.import-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.import-row input[type="password"],
+.import-row input[type="file"] {
+  font-size: 0.85rem;
+}
+
 .badge.health_available { background: rgba(62, 207, 142, 0.22); color: var(--success); }
 .badge.health_needs_refresh { background: rgba(240, 180, 41, 0.2); color: var(--warn); }
 .badge.health_softban { background: rgba(232, 121, 169, 0.2); color: #e879a9; }

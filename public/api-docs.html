@@ -29,6 +29,10 @@
     <h1>External API v1</h1>
     <p class="muted">For integrations from your other apps. Requires <code>API_KEY</code> in server <code>.env</code>.</p>
 
+    <h2>Base URL</h2>
+    <pre>https://acc-api-dashboeard.34.166.92.24.sslip.io</pre>
+    <p class="muted">Local dev: <code>http://localhost:3847</code></p>
+
     <h2>Authentication</h2>
     <pre>Authorization: Bearer YOUR_API_KEY
 # or
@@ -70,6 +74,19 @@ Content-Type: application/json
     <pre>GET /api/accounts/export/tokens
 GET /api/accounts/export/failed-refresh</pre>
     <p>Columns include <code>last_login</code> and <code>token_expires</code>.</p>
+
+    <h2>Restore accounts (zip upload)</h2>
+    <p>Dashboard → <strong>Restore data backup</strong> on the Account dashboard card, or:</p>
+    <pre>POST /api/data/import
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/zip
+
+(raw data-backup.zip bytes)</pre>
+    <p>Extracts into persistent <code>/app/data</code>. Server restarts automatically. Use the same <code>CREDENTIALS_KEY</code> as when the backup was created.</p>
+
+    <h2>Example — list all tokens</h2>
+    <pre>curl -s -H "Authorization: Bearer YOUR_API_KEY" \
+  "https://acc-api-dashboeard.34.166.92.24.sslip.io/api/v1/tokens?target=outlook"</pre>
 
     <p class="muted" style="margin-top:2rem">Full reference: <code>API.md</code> in the repository.</p>
   </div>

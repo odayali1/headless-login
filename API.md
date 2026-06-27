@@ -1,8 +1,9 @@
 # Headless Login — External API (v1)
 
-Base URL: `http://your-server:3847` (or your Coolify domain)
+**Production:** `https://acc-api-dashboeard.34.166.92.24.sslip.io`  
+**Local:** `http://localhost:3847`
 
-All `/api/v1/*` routes require an API key. The dashboard UI does **not** need the key.
+All `/api/v1/*` routes require an API key. The dashboard UI does **not** need the key (except data restore upload).
 
 ## Setup
 
@@ -160,7 +161,7 @@ When proxy is **ON** (default):
 ## cURL examples
 
 ```bash
-export BASE=https://your-server:3847
+export BASE=https://acc-api-dashboeard.34.166.92.24.sslip.io
 export KEY=your-api-key
 
 # All tokens
@@ -175,6 +176,26 @@ curl -s -X POST -H "Authorization: Bearer $KEY" \
 # Poll job
 curl -s -H "Authorization: Bearer $KEY" "$BASE/api/v1/jobs/JOB_ID"
 ```
+
+---
+
+## Restore data backup (Coolify / server)
+
+Upload your laptop `data-backup.zip` into persistent `/app/data`:
+
+**Dashboard:** Account dashboard → **Restore data backup** → enter API key → choose zip → Upload.
+
+**API:**
+
+```http
+POST /api/data/import
+Authorization: Bearer YOUR_API_KEY
+Content-Type: application/zip
+
+<raw zip bytes>
+```
+
+Server extracts `app.db` + `profiles/` then auto-restarts. `CREDENTIALS_KEY` on the server must match the laptop backup.
 
 ---
 

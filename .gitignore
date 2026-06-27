@@ -5,4 +5,5 @@ screenshots/
 data/
 .env
 env.deploy.txt
+data-backup.zip
 *.log
