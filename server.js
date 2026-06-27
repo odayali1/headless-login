@@ -29,6 +29,8 @@ import {
   deleteAccountCredentials,
   setAccountGroup,
   listGroups,
+  getAccountRecord,
+  hasStoredPassword,
 } from './lib/db.js';
 
 import { runStartupMigrations } from './lib/migrate.js';
@@ -507,12 +509,19 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
 
 
+  const row = getAccountRecord(email, target);
+
+  if (!row) {
+    return res.status(404).json({ error: 'Account not in database — use batch upload or single login form.' });
+  }
+
   const stored = getAccountPassword(email, target);
 
   if (!stored) {
-
-    return res.status(400).json({ error: 'No saved password — log in once from the form.' });
-
+    const msg = row.password_enc
+      ? 'Password is saved but cannot be decrypted on this server. Ensure data/.credentials-key was imported, or re-upload the batch CSV with passwords.'
+      : 'No saved password — log in once from the form.';
+    return res.status(400).json({ error: msg });
   }
 
 
