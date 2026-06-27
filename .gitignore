@@ -1,0 +1,8 @@
+node_modules/
+sessions/
+profiles/
+screenshots/
+data/
+.env
+env.deploy.txt
+*.log

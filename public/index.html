@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Headless Login — Outlook & Teams</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div>
+          <h1>Headless Login</h1>
+          <p class="subtitle">Camoufox stealth · Outlook & Teams · mobile proxy</p>
+        </div>
+      </div>
+      <div class="header-controls">
+        <a href="/api-docs.html" class="btn ghost header-link">API docs</a>
+        <button type="button" class="status-pill proxy-pill" id="proxyToggle" title="Toggle mobile proxy">
+          <span class="dot"></span>
+          <span id="proxyLabel">Proxy…</span>
+        </button>
+        <div class="status-pill" id="obscuraStatus">
+          <span class="dot"></span>
+          <span>Checking…</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card form-card">
+        <h2>Single account</h2>
+        <form id="singleForm">
+          <label>
+            Email
+            <input type="email" id="email" placeholder="user@outlook.com" required autocomplete="username" />
+          </label>
+          <label>
+            Password
+            <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password" />
+          </label>
+          <label>
+            Target
+            <select id="target">
+              <option value="outlook">Outlook (outlook.live.com)</option>
+              <option value="teams">Microsoft Teams</option>
+            </select>
+          </label>
+          <label>
+            Group (optional)
+            <input type="text" id="singleGroup" placeholder="e.g. client-x, warmup, risky" />
+          </label>
+          <button type="submit" class="btn primary" id="loginBtn">Login headless</button>
+        </form>
+      </section>
+
+      <section class="card form-card">
+        <h2>Batch paste</h2>
+        <p class="hint">One account per line: <code>email:password</code> or <code>email,password</code></p>
+        <label>
+          Accounts
+          <textarea id="batchInput" rows="8" placeholder="alice@outlook.com:SecretPass1&#10;bob@outlook.com,AnotherPass2"></textarea>
+        </label>
+        <label>
+          Target
+          <select id="batchTarget">
+            <option value="outlook">Outlook</option>
+            <option value="teams">Teams</option>
+          </select>
+        </label>
+        <label>
+          Group for this batch (optional)
+          <input type="text" id="batchGroup" placeholder="e.g. client-x" />
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="batchSkipBackupEmail" checked />
+          Skip backup-email prompts for 7 days (batch + re-login)
+        </label>
+        <p class="hint">Sequential login only (one account at a time). IP rotates every <strong>5 accounts</strong> when proxy is ON.</p>
+        <div class="batch-actions">
+          <button type="button" class="btn secondary" id="batchBtn">Run batch login</button>
+          <button type="button" class="btn ghost" id="fillTestBatchBtn" title="Fill 5 test lines — edit passwords before running">Load 5 test accounts</button>
+        </div>
+      </section>
+
+      <section class="card stats-card">
+        <div class="jobs-header">
+          <h2>Account dashboard</h2>
+          <div class="jobs-header-actions">
+            <button type="button" class="status-pill smart-refresh-pill" id="smartRefreshToggle" title="Auto-refresh tokens before expiry">
+              <span class="dot"></span>
+              <span id="smartRefreshLabel">Smart refresh…</span>
+            </button>
+          </div>
+        </div>
+        <div class="account-stats-grid" id="accountStatsGrid">
+          <div class="stat-card available"><span class="stat-num" id="statAvailable">0</span><span class="stat-label">Available</span></div>
+          <div class="stat-card needs"><span class="stat-num" id="statNeedsRefresh">0</span><span class="stat-label">Needs refresh</span></div>
+          <div class="stat-card failed"><span class="stat-num" id="statFailed">0</span><span class="stat-label">Failed</span></div>
+          <div class="stat-card softban"><span class="stat-num" id="statSoftban">0</span><span class="stat-label">Softban</span></div>
+          <div class="stat-card mfa"><span class="stat-num" id="statMfa">0</span><span class="stat-label">MFA</span></div>
+          <div class="stat-card session-only" title="Logged in but no LiveProfileCard token yet"><span class="stat-num" id="statOther">0</span><span class="stat-label">Session only</span></div>
+          <div class="stat-card total"><span class="stat-num" id="statTotal">0</span><span class="stat-label">Total</span></div>
+        </div>
+        <div class="export-actions">
+          <button type="button" class="btn small export" id="exportTokensBtn">Export email + token (CSV)</button>
+          <button type="button" class="btn small export-fail" id="exportFailedRefreshBtn">Export failed + refresh token (CSV)</button>
+        </div>
+        <p class="hint"><strong>Available</strong> = token ready · <strong>Session only</strong> = logged in, no token (use Re-login) · Smart refresh renews tokens ~30 min before expiry.</p>
+      </section>
+
+      <section class="card jobs-card">
+        <div class="jobs-header">
+          <h2>Login queue</h2>
+          <div class="jobs-header-actions">
+            <button type="button" class="btn ghost" id="cancelQueuedBtn">Cancel queued</button>
+            <button type="button" class="btn ghost" id="clearBtn">Clear finished</button>
+          </div>
+        </div>
+        <div id="queueBanner" class="queue-banner-wrap"></div>
+        <div id="jobsList" class="jobs-list">
+          <p class="empty">No jobs yet. Submit credentials above to start.</p>
+        </div>
+      </section>
+
+      <section class="card accounts-card">
+        <div class="jobs-header">
+          <h2>Account management</h2>
+          <button type="button" class="btn ghost" id="refreshAccountsBtn">Refresh</button>
+        </div>
+        <div class="group-toolbar">
+          <input type="text" id="searchInput" placeholder="Search email..." />
+          <select id="groupFilter"><option value="">All groups</option></select>
+          <select id="healthFilter">
+            <option value="">All health</option>
+            <option value="available">Available</option>
+            <option value="needs_refresh">Needs refresh</option>
+            <option value="softban">Softban</option>
+            <option value="failed">Failed</option>
+            <option value="session_only">Session only</option>
+            <option value="mfa_required">MFA</option>
+          </select>
+          <input type="text" id="assignGroupInput" placeholder="Group name" />
+          <button type="button" class="btn ghost" id="assignGroupBtn">Assign group to filtered</button>
+          <button type="button" class="btn ghost" id="groupRefreshBtn">Refresh group</button>
+          <button type="button" class="btn ghost" id="groupReloginBtn">Re-login group</button>
+          <button type="button" class="btn ghost" id="groupSoftbanBtn">Softban check group</button>
+          <button type="button" class="btn ghost" id="groupExportBtn">Export tokens group</button>
+        </div>
+        <p class="hint">Camoufox persistent profile per account — same fingerprint every session. Re-login / Refresh token reuse saved session.</p>
+        <div class="accounts-table-wrap">
+          <table class="accounts-table" id="accountsTable">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Group</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Softban</th>
+                <th>Last login</th>
+                <th>Token expires</th>
+                <th>Scope</th>
+                <th>Access token</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="accountsBody">
+              <tr><td colspan="10" class="empty">No accounts yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="modal-overlay" id="logModal" hidden>
+      <div class="modal modal-wide">
+        <div class="modal-header">
+          <h3 id="logModalTitle">Job log</h3>
+          <button type="button" class="btn ghost modal-close" id="logModalClose" aria-label="Close">✕</button>
+        </div>
+        <label class="log-job-picker">
+          Run
+          <select id="logJobSelect"></select>
+        </label>
+        <div id="logModalMeta" class="log-modal-meta"></div>
+        <div id="logModalBody" class="log-modal-body"></div>
+      </div>
+    </div>
+
+    <footer>
+      <p>Camoufox only · stable per-account Firefox profile · SOCKS5 mobile proxy · never uses VPS IP when proxy is ON.</p>
+    </footer>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

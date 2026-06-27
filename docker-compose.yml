@@ -1,0 +1,15 @@
+services:
+  headless-login:
+    build: .
+    ports:
+      - "3847:3847"
+    environment:
+      - PORT=3847
+      - DATA_DIR=/app/data
+      - CREDENTIALS_KEY=${CREDENTIALS_KEY}
+      - CAMOUFOX_INSTALL_DIR=/opt/camoufox
+    volumes:
+      - headless-data:/app/data
+
+volumes:
+  headless-data:

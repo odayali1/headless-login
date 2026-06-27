@@ -1,0 +1,22 @@
+{
+  "name": "headless-login",
+  "version": "1.0.0",
+  "description": "Outlook & Teams headless login via Obscura + Playwright",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "obscura": "node scripts/start-obscura.js",
+    "camoufox:fetch": "camoufox-js fetch",
+    "postinstall": "camoufox-js fetch || true",
+    "login:test": "node scripts/cli-login.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "camoufox-js": "^0.11.1",
+    "express": "^4.21.2",
+    "playwright": "1.52.0",
+    "playwright-core": "1.52.0",
+    "proxy-chain": "^3.0.0",
+    "uuid": "^11.1.0"
+  }
+}

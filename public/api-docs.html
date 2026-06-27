@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Docs — Headless Login</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .docs { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+    .docs h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    .docs h2 { font-size: 1.1rem; margin: 1.75rem 0 0.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; }
+    .docs pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5; }
+    .docs code { font-family: var(--mono); font-size: 0.85em; }
+    .docs p, .docs li { font-size: 0.9rem; color: var(--text); margin-bottom: 0.5rem; }
+    .docs .muted { color: var(--muted); }
+    .docs table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 0.75rem 0; }
+    .docs th, .docs td { border: 1px solid var(--border); padding: 0.5rem 0.65rem; text-align: left; }
+    .docs th { background: var(--surface2); color: var(--muted); }
+    .back { display: inline-block; margin-bottom: 1rem; color: var(--accent); text-decoration: none; font-size: 0.9rem; }
+    .back:hover { text-decoration: underline; }
+    .pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-right: 0.35rem; }
+    .pill.get { background: rgba(62,207,142,0.2); color: var(--success); }
+    .pill.post { background: rgba(91,141,239,0.2); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="docs">
+    <a class="back" href="/">← Dashboard</a>
+    <h1>External API v1</h1>
+    <p class="muted">For integrations from your other apps. Requires <code>API_KEY</code> in server <code>.env</code>.</p>
+
+    <h2>Authentication</h2>
+    <pre>Authorization: Bearer YOUR_API_KEY
+# or
+X-Api-Key: YOUR_API_KEY</pre>
+
+    <h2>Endpoints</h2>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Description</th></tr>
+      <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/health</code></td><td>API + queue status</td></tr>
+      <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/tokens</code></td><td>All accounts with token metadata</td></tr>
+      <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/accounts/:email</code></td><td>Single account (?target=outlook)</td></tr>
+      <tr><td><span class="pill post">POST</span></td><td><code>/api/v1/accounts/:email/refresh</code></td><td>Queue token refresh</td></tr>
+      <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/jobs/:id</code></td><td>Poll job status</td></tr>
+    </table>
+
+    <h2>Get all tokens</h2>
+    <pre>GET /api/v1/tokens?target=outlook&group=my-group&tokens_only=1</pre>
+    <p>Returns <code>access_token</code>, <code>token_expires_at</code>, <code>last_login_at</code>, <code>health</code>, <code>group</code>, etc.</p>
+
+    <h2>Refresh one account</h2>
+    <pre>POST /api/v1/accounts/user@outlook.com/refresh
+Content-Type: application/json
+
+{"target": "outlook"}</pre>
+    <p>Add <code>?wait=true</code> to block until done (max 120s default).</p>
+
+    <h2>Refresh vs Re-login</h2>
+    <table>
+      <tr><th></th><th>Refresh</th><th>Re-login</th></tr>
+      <tr><td>Password</td><td>Not used</td><td>Saved password</td></tr>
+      <tr><td>What it does</td><td>Renews token via saved session</td><td>Full Microsoft sign-in</td></tr>
+      <tr><td>When</td><td>Token expired, session OK</td><td>Session dead / session-only</td></tr>
+    </table>
+
+    <h2>Proxy on refresh</h2>
+    <p>Proxy is <strong>always used</strong> when enabled. IP rotates every <strong>5 account operations</strong> (not every refresh).</p>
+
+    <h2>CSV export (no API key)</h2>
+    <pre>GET /api/accounts/export/tokens
+GET /api/accounts/export/failed-refresh</pre>
+    <p>Columns include <code>last_login</code> and <code>token_expires</code>.</p>
+
+    <p class="muted" style="margin-top:2rem">Full reference: <code>API.md</code> in the repository.</p>
+  </div>
+</body>
+</html>
