@@ -74,10 +74,14 @@
           Group for this batch (optional)
           <input type="text" id="batchGroup" placeholder="e.g. client-x" />
         </label>
-        <label class="checkbox-row">
-          <input type="checkbox" id="batchSkipBackupEmail" checked />
-          Skip backup-email prompts for 7 days (batch + re-login) — clicks Skip in the headless browser only; your phone may still show the prompt separately.
+        <label>
+          Backup email during login
+          <select id="batchBackupMode">
+            <option value="skip" selected>Skip backup prompt if shown (default)</option>
+            <option value="hub">Set backup via IMAP hub</option>
+          </select>
         </label>
+        <p class="hint">Hub mode uses a registered backup hub inbox (Thunderbird IMAP token) to read verification codes. Register hubs via API <code>POST /api/backup-hubs</code>.</p>
         <p class="hint">Sequential login only (one account at a time). IP rotates every <strong>5 accounts</strong> when proxy is ON.</p>
         <div class="batch-actions">
           <button type="button" class="btn secondary" id="batchBtn">Run batch login</button>
@@ -154,6 +158,11 @@
             <option value="failed">Failed</option>
             <option value="session_only">Session only</option>
             <option value="mfa_required">MFA</option>
+            <option value="backup_unknown">Backup: not checked yet</option>
+            <option value="backup_not_prompted">Backup: no prompt shown</option>
+            <option value="backup_skipped">Backup: prompt skipped</option>
+            <option value="backup_verified">Backup: verified</option>
+            <option value="backup_required">Backup: prompt — add email</option>
           </select>
           <select id="actionTarget" title="Which Microsoft app to open for login (same account, one token)">
             <option value="">Login via: Outlook (default)</option>
@@ -177,6 +186,7 @@
                 <th>Group</th>
                 <th>Login via</th>
                 <th>Status</th>
+                <th>Backup</th>
                 <th>Softban</th>
                 <th>Last login</th>
                 <th>Token expires</th>
@@ -186,7 +196,7 @@
               </tr>
             </thead>
             <tbody id="accountsBody">
-              <tr><td colspan="10" class="empty">No accounts yet.</td></tr>
+              <tr><td colspan="11" class="empty">No accounts yet.</td></tr>
             </tbody>
           </table>
         </div>
