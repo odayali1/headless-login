@@ -25,7 +25,7 @@ const els = {
   batchInput: document.getElementById('batchInput'),
   batchTarget: document.getElementById('batchTarget'),
   batchGroup: document.getElementById('batchGroup'),
-  batchSkipBackupEmail: document.getElementById('batchSkipBackupEmail'),
+  batchBackupMode: document.getElementById('batchBackupMode'),
   batchBtn: document.getElementById('batchBtn'),
   jobsList: document.getElementById('jobsList'),
   queueBanner: document.getElementById('queueBanner'),
@@ -247,6 +247,26 @@ async function checkHealth() {
     els.obscuraStatus.className = 'status-pill offline';
     els.obscuraStatus.querySelector('span:last-child').textContent = 'Server unreachable';
   }
+}
+
+function backupLoginBody() {
+  const mode = els.batchBackupMode?.value || 'skip';
+  if (mode === 'hub') return { skipBackupEmail: false, backupEmailMode: 'hub' };
+  return { skipBackupEmail: true, backupEmailMode: 'skip' };
+}
+
+function matchesHealthFilter(acc) {
+  const h = accountFilters.health;
+  if (!h) return true;
+  if (h.startsWith('backup_')) {
+    const key = h.replace('backup_', '');
+    return (acc.backupEmailStatus || 'unknown') === key;
+  }
+  if (h === 'needs_token') {
+    const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
+    return NEEDS_TOKEN.has(acc.health || '');
+  }
+  return (acc.health || '') === h;
 }
 
 function parseBatch(text) {
@@ -494,13 +514,13 @@ function formatTime(iso) {
 function renderAccounts() {
   const filtered = accounts.filter((acc) => {
     if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
+    if (!matchesHealthFilter(acc)) return false;
     if (accountFilters.search && !String(acc.email || '').toLowerCase().includes(accountFilters.search.toLowerCase())) return false;
     return true;
   });
 
   if (!filtered.length) {
-    els.accountsBody.innerHTML = '<tr><td colspan="10" class="empty">No accounts match current filters.</td></tr>';
+    els.accountsBody.innerHTML = '<tr><td colspan="11" class="empty">No accounts match current filters.</td></tr>';
     return;
   }
 
@@ -524,6 +544,7 @@ function renderAccounts() {
           <td><code class="scope-tag">${escapeHtml(acc.group || '—')}</code></td>
           <td>${escapeHtml(acc.loginVia || 'outlook')}</td>
           <td><span class="badge health_${escapeHtml(acc.health || acc.status)}">${escapeHtml(acc.healthLabel || acc.statusLabel)}</span></td>
+          <td><span class="badge backup_${escapeHtml(acc.backupEmailStatus || 'unknown')}" title="${escapeHtml(acc.backupEmail || '')}">${escapeHtml(acc.backupEmailStatusLabel || 'Unknown')}</span></td>
           <td>${softbanBadge}</td>
           <td>${formatTime(acc.lastLoginAt)}</td>
           <td>${formatTime(acc.tokenExpiresAt)}</td>
@@ -740,7 +761,7 @@ els.accountsBody.addEventListener('click', async (e) => {
         body: JSON.stringify({
           engine: 'auto',
           loginAs: loginAs || undefined,
-          skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+          ...backupLoginBody(),
         }),
       });
       const data = await res.json();
@@ -766,12 +787,9 @@ function loginAsLabel() {
 }
 
 function currentFilteredAccounts() {
-  const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
   return accounts.filter((acc) => {
     if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (accountFilters.health === 'needs_token') {
-      if (!NEEDS_TOKEN.has(acc.health || '')) return false;
-    } else if (accountFilters.health && (acc.health || '') !== accountFilters.health) return false;
+    if (!matchesHealthFilter(acc)) return false;
     if (accountFilters.search && !String(acc.email || '').toLowerCase().includes(accountFilters.search.toLowerCase())) return false;
     return true;
   });
@@ -818,7 +836,7 @@ async function runGroupAction(action) {
     body: JSON.stringify({
       action,
       loginAs: getLoginAsOverride(),
-      skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+      ...backupLoginBody(),
     }),
   });
   const data = await res.json();
@@ -845,7 +863,7 @@ async function runFilteredAction(action) {
       action,
       accounts: list,
       loginAs,
-      skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+      ...backupLoginBody(),
     }),
   });
   const data = await res.json();
@@ -906,7 +924,7 @@ els.batchBtn.addEventListener('click', async () => {
         accounts: batchAccounts,
         target: els.batchTarget.value,
         group: els.batchGroup?.value || '',
-        skipBackupEmail: els.batchSkipBackupEmail?.checked !== false,
+        ...backupLoginBody(),
       }),
     });
     const data = await res.json();
