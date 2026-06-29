@@ -25,7 +25,7 @@ const els = {
   batchInput: document.getElementById('batchInput'),
   batchTarget: document.getElementById('batchTarget'),
   batchGroup: document.getElementById('batchGroup'),
-  batchBackupMode: document.getElementById('batchBackupMode'),
+  batchSkipBackupEmail: document.getElementById('batchSkipBackupEmail'),
   batchBtn: document.getElementById('batchBtn'),
   jobsList: document.getElementById('jobsList'),
   queueBanner: document.getElementById('queueBanner'),
@@ -250,9 +250,8 @@ async function checkHealth() {
 }
 
 function backupLoginBody() {
-  const mode = els.batchBackupMode?.value || 'skip';
-  if (mode === 'hub') return { skipBackupEmail: false, backupEmailMode: 'hub' };
-  return { skipBackupEmail: true, backupEmailMode: 'skip' };
+  const skip = els.batchSkipBackupEmail?.checked !== false;
+  return { skipBackupEmail: skip };
 }
 
 function matchesHealthFilter(acc) {

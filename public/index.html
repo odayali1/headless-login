@@ -74,14 +74,10 @@
           Group for this batch (optional)
           <input type="text" id="batchGroup" placeholder="e.g. client-x" />
         </label>
-        <label>
-          Backup email during login
-          <select id="batchBackupMode">
-            <option value="skip" selected>Skip backup prompt if shown (default)</option>
-            <option value="hub">Set backup via IMAP hub</option>
-          </select>
+        <label class="checkbox-row">
+          <input type="checkbox" id="batchSkipBackupEmail" checked />
+          Skip backup-email prompt when Microsoft shows a skip button
         </label>
-        <p class="hint">Hub mode uses a registered backup hub inbox (Thunderbird IMAP token) to read verification codes. Register hubs via API <code>POST /api/backup-hubs</code>.</p>
         <p class="hint">Sequential login only (one account at a time). IP rotates every <strong>5 accounts</strong> when proxy is ON.</p>
         <div class="batch-actions">
           <button type="button" class="btn secondary" id="batchBtn">Run batch login</button>
