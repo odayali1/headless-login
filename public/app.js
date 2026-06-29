@@ -1043,6 +1043,11 @@ function connectSSE() {
     renderProxyPill();
   });
 
+  es.addEventListener('smart-refresh', (e) => {
+    smartRefreshState = JSON.parse(e.data);
+    renderSmartRefreshPill();
+  });
+
   es.addEventListener('job', (e) => {
     const job = JSON.parse(e.data);
     mergeJob(job);

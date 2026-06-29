@@ -14,7 +14,12 @@ import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 import { listAccounts } from './lib/accounts.js';
 import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
-import { initSmartRefresh, getSmartRefreshStatus, isSmartRefreshEnabled, setSmartRefreshEnabled } from './lib/smart-refresh.js';
+import {
+  getSmartRefreshStatus,
+  isSmartRefreshEnabled,
+  setSmartRefreshEnabled,
+  syncSmartRefreshRuntime,
+} from './lib/smart-refresh.js';
 
 import { markProfileFailed, loadProfile, CANONICAL_TARGET, deleteAllProfilesForEmail } from './lib/profile.js';
 
@@ -267,14 +272,31 @@ app.get('/api/smart-refresh', (_req, res) => {
 
 
 
-app.post('/api/smart-refresh/toggle', (req, res) => {
+const smartRefreshRuntime = {
+  enqueue: enqueueLogin,
+  log: (msg) => console.log(msg),
+  onRefreshed: broadcastAccounts,
+};
 
+app.post('/api/smart-refresh/toggle', async (req, res) => {
   const enabled = req.body?.enabled !== false;
-
   setSmartRefreshEnabled(enabled);
 
-  res.json(getSmartRefreshStatus());
+  if (enabled) {
+    const camoufox = await isCamoufoxAvailable();
+    if (!camoufox) {
+      setSmartRefreshEnabled(false);
+      return res.status(503).json({
+        ...getSmartRefreshStatus(),
+        error: 'Camoufox not available — smart refresh cannot run on this host.',
+      });
+    }
+  }
 
+  syncSmartRefreshRuntime(smartRefreshRuntime);
+  const status = getSmartRefreshStatus();
+  broadcast('smart-refresh', status);
+  res.json(status);
 });
 
 
@@ -1091,11 +1113,11 @@ app.listen(PORT, async () => {
   await runStartupMigrations();
   await ensureCamoufoxInstalled();
   const camoufox = await isCamoufoxAvailable();
-  if (camoufox && isSmartRefreshEnabled()) {
-    initSmartRefresh({ enqueue: enqueueLogin, log: (msg) => console.log(msg), onRefreshed: broadcastAccounts });
-  } else if (!camoufox) {
+  if (!camoufox) {
     setSmartRefreshEnabled(false);
     console.warn('[camoufox] Binary not available — smart refresh OFF. Check container logs for download errors.');
+  } else {
+    syncSmartRefreshRuntime(smartRefreshRuntime);
   }
   const proxy = getProxyStatus();
   console.log(`Dashboard: http://localhost:${PORT}`);
