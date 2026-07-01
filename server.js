@@ -11,7 +11,7 @@ import { ensureCamoufoxInstalled } from './lib/ensure-camoufox.js';
 
 import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 
-import { listAccounts } from './lib/accounts.js';
+import { listAccounts, listAccountsPage, filterAccounts, invalidateAccountsCache } from './lib/accounts.js';
 import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
 import {
@@ -42,7 +42,12 @@ import { runStartupMigrations } from './lib/migrate.js';
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, rotateProxyIp } from './lib/proxy.js';
+import {
+  beforeAccountLogin,
+  afterAccountLoginSuccess,
+  beforeAccountRefresh,
+  rotateProxyIp,
+} from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled } from './lib/settings.js';
 
@@ -192,16 +197,12 @@ app.post('/api/proxy/rotate', async (_req, res) => {
 
 
 function broadcastAccounts() {
-
-  listAccounts()
-
+  invalidateAccountsCache();
+  listAccounts({ bustCache: true })
     .then((accounts) => {
-      broadcast('accounts', accounts);
       broadcast('account-stats', computeAccountStats(accounts));
     })
-
     .catch(() => {});
-
 }
 
 
@@ -301,42 +302,68 @@ app.post('/api/smart-refresh/toggle', async (req, res) => {
 
 
 
-app.get('/api/accounts', async (_req, res) => {
+app.get('/api/accounts', async (req, res) => {
+  const { page, limit, group, health, search } = req.query || {};
+  if (page || limit || group || health || search) {
+    return res.json(
+      await listAccountsPage({
+        page,
+        limit,
+        group: String(group || ''),
+        health: String(health || ''),
+        search: String(search || ''),
+      })
+    );
+  }
+  const all = await listAccounts();
+  res.json({
+    accounts: all.map((acc) => {
+      const accessToken = acc.accessToken || null;
+      const { accessToken: _drop, ...rest } = acc;
+      return {
+        ...rest,
+        hasAccessToken: !!accessToken,
+        tokenPreview: accessToken ? `${accessToken.slice(0, 24)}…` : null,
+      };
+    }),
+    total: all.length,
+    page: 1,
+    limit: all.length,
+    pages: 1,
+  });
+});
 
-  res.json(await listAccounts());
-
+app.get('/api/accounts/emails', async (req, res) => {
+  const { group = '', health = '', search = '' } = req.query || {};
+  const filtered = filterAccounts(await listAccounts(), {
+    group: String(group || ''),
+    health: String(health || ''),
+    search: String(search || ''),
+  });
+  res.json({
+    accounts: filtered.map((a) => ({
+      email: a.email,
+      target: a.target,
+      hasStoredPassword: a.hasStoredPassword,
+    })),
+    total: filtered.length,
+  });
 });
 
 
 
 app.get('/api/accounts/:email/:target/token', async (req, res) => {
-
-  const accounts = await listAccounts();
-
-  const acc = accounts.find(
-
-    (a) => a.email === req.params.email && a.target === req.params.target
-
-  );
-
-  if (!acc?.accessToken) {
-
+  const data = await loadProfile(req.params.email, req.params.target);
+  const token = data?.tokens;
+  if (!token?.access_token) {
     return res.status(404).json({ error: 'No access token for this account.' });
-
   }
-
   res.json({
-
-    email: acc.email,
-
-    target: acc.target,
-
-    access_token: acc.accessToken,
-
-    expires_at: acc.tokenExpiresAt,
-
+    email: req.params.email,
+    target: req.params.target,
+    access_token: token.access_token,
+    expires_at: token.expires_at || null,
   });
-
 });
 
 
@@ -523,6 +550,7 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
   const { email, target } = req.params;
   const { skipBackupEmail = true, loginAs } = req.body || {};
   const loginVia = resolveLoginVia(loginAs);
+  const backupOpts = parseBackupLoginOptions(req.body);
 
   const stored = getAccountPasswordWithFallback(email, CANONICAL_TARGET);
 
@@ -544,7 +572,7 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
   enqueueLogin(() =>
 
-    runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
+    runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, ...backupOpts }).catch(async (err) => {
 
       await markProfileFailed(email, err.message).catch(() => {});
 
@@ -600,7 +628,20 @@ function resolveLoginVia(loginAs) {
   return CANONICAL_TARGET;
 }
 
-async function queueAccountsAction(action, accounts, { label = 'bulk', skipBackupEmail = true, loginAs = '' } = {}) {
+/** skip | hub | block — hub sets backup via IMAP hub inbox */
+function parseBackupLoginOptions(body = {}) {
+  const mode = String(body.backupEmailMode || '').trim().toLowerCase();
+  if (mode === 'hub') {
+    return { skipBackupEmail: false, backupEmailMode: 'hub' };
+  }
+  const skip = body.skipBackupEmail !== false;
+  return { skipBackupEmail: skip, backupEmailMode: skip ? 'skip' : 'block' };
+}
+
+async function queueAccountsAction(action, accounts, { label = 'bulk', skipBackupEmail = true, backupEmailMode = 'skip', loginAs = '' } = {}) {
+  const backupOpts = backupEmailMode === 'hub'
+    ? { skipBackupEmail: false, backupEmailMode: 'hub' }
+    : { skipBackupEmail, backupEmailMode: skipBackupEmail ? 'skip' : 'block' };
   const accepted = [];
   const loginVia = resolveLoginVia(loginAs);
   for (const acc of accounts) {
@@ -639,7 +680,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
       const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} re-login queued…`);
       accepted.push({ email, target: CANONICAL_TARGET, loginVia, jobId: id });
       enqueueLogin(() =>
-        runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, skipBackupEmail }).catch(async (err) => {
+        runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, ...backupOpts }).catch(async (err) => {
           await markProfileFailed(email, err.message).catch(() => {});
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
@@ -670,7 +711,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
 }
 
 app.post('/api/accounts/bulk-action', async (req, res) => {
-  const { action, accounts: list, skipBackupEmail = true, loginAs = '' } = req.body || {};
+  const { action, accounts: list, skipBackupEmail = true, backupEmailMode = '', loginAs = '' } = req.body || {};
   if (!Array.isArray(list) || list.length === 0) {
     return res.status(400).json({ error: 'accounts array is required.' });
   }
@@ -686,14 +727,19 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
     return res.status(400).json({ error: 'No valid accounts in request.' });
   }
 
-  const accepted = await queueAccountsAction(action, normalized, { label: 'Filtered', skipBackupEmail, loginAs });
+  const accepted = await queueAccountsAction(action, normalized, {
+    label: 'Filtered',
+    skipBackupEmail,
+    backupEmailMode: String(backupEmailMode || '').trim(),
+    loginAs,
+  });
   broadcastAccounts();
   res.json({ ok: true, action, count: accepted.length, accepted });
 });
 
 app.post('/api/groups/:group/action', async (req, res) => {
   const group = String(req.params.group || '').trim();
-  const { action, loginAs = '', skipBackupEmail = true } = req.body || {};
+  const { action, loginAs = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
   if (!group) return res.status(400).json({ error: 'Group is required.' });
   if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
     return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
@@ -704,7 +750,12 @@ app.post('/api/groups/:group/action', async (req, res) => {
   );
   if (accounts.length === 0) return res.status(404).json({ error: `No accounts in group "${group}"` });
 
-  const accepted = await queueAccountsAction(action, accounts, { label: `Group ${group}`, skipBackupEmail, loginAs });
+  const accepted = await queueAccountsAction(action, accounts, {
+    label: `Group ${group}`,
+    skipBackupEmail,
+    backupEmailMode: String(backupEmailMode || '').trim(),
+    loginAs,
+  });
 
   broadcastAccounts();
   res.json({ ok: true, group, action, count: accepted.length, accepted });
@@ -816,15 +867,30 @@ app.get('/api/events', (req, res) => {
 
   sseClients.add(res);
 
-  Promise.all([listAccounts()]).then(([accounts]) => {
-
-    res.write(
-
-      `event: connected\ndata: ${JSON.stringify({ jobs: listSummaries({ limit: 100 }), jobStats: jobStats(), queue: getQueueStatus(), accounts, accountStats: computeAccountStats(accounts), smartRefresh: getSmartRefreshStatus(), proxy: getProxyStatus() })}\n\n`
-
-    );
-
-  });
+  listAccounts()
+    .then((accounts) => {
+      res.write(
+        `event: connected\ndata: ${JSON.stringify({
+          jobs: listSummaries({ limit: 100 }),
+          jobStats: jobStats(),
+          queue: getQueueStatus(),
+          accountStats: computeAccountStats(accounts),
+          smartRefresh: getSmartRefreshStatus(),
+          proxy: getProxyStatus(),
+        })}\n\n`
+      );
+    })
+    .catch(() => {
+      res.write(
+        `event: connected\ndata: ${JSON.stringify({
+          jobs: listSummaries({ limit: 100 }),
+          jobStats: jobStats(),
+          queue: getQueueStatus(),
+          smartRefresh: getSmartRefreshStatus(),
+          proxy: getProxyStatus(),
+        })}\n\n`
+      );
+    });
 
 
 
@@ -836,7 +902,8 @@ app.get('/api/events', (req, res) => {
 
 app.post('/api/login', async (req, res) => {
 
-  const { email, password, target = 'outlook', headless = true, group = '', skipBackupEmail = true } = req.body || {};
+  const { email, password, target = 'outlook', headless = true, group = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
+  const backupOpts = parseBackupLoginOptions(req.body);
 
 
 
@@ -883,13 +950,17 @@ app.post('/api/login', async (req, res) => {
 
 
   saveAccountCredentials(email.trim(), CANONICAL_TARGET, password, 'camoufox');
-  if (group) setAccountGroup(email.trim(), CANONICAL_TARGET, group);
+  const groupName = String(group || '').trim();
+  if (groupName) {
+    setAccountGroup(email.trim(), CANONICAL_TARGET, groupName);
+    broadcastAccounts();
+  }
 
 
 
   enqueueLogin(() =>
 
-    runJob(id, email.trim(), password, loginVia, 'camoufox', headless, { skipBackupEmail }).catch(async (err) => {
+    runJob(id, email.trim(), password, loginVia, 'camoufox', headless, backupOpts).catch(async (err) => {
 
       await markProfileFailed(email.trim(), err.message).catch(() => {});
 
@@ -907,8 +978,10 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/login/batch', async (req, res) => {
 
-  const { accounts = [], target = 'outlook', headless = true, group = '', skipBackupEmail = true } = req.body || {};
+  const { accounts = [], target = 'outlook', headless = true, group = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
+  const backupOpts = parseBackupLoginOptions(req.body);
   const loginVia = target;
+  const groupName = String(group || '').trim();
 
   if (!Array.isArray(accounts) || accounts.length === 0) {
 
@@ -952,6 +1025,8 @@ app.post('/api/login/batch', async (req, res) => {
 
       batchId,
 
+      batchGroup: groupName || null,
+
     });
 
     ids.push(id);
@@ -962,20 +1037,22 @@ app.post('/api/login/batch', async (req, res) => {
 
   if (batchSummaries.length) {
 
-    broadcastBatch(batchId, batchSummaries);
+    broadcastBatch(batchId, batchSummaries, { batchGroup: groupName || null });
 
   }
 
-  res.json({ ids, count: ids.length, batchId });
+  res.json({ ids, count: ids.length, batchId, batchGroup: groupName || null });
 
 
 
   for (const acc of validAccounts) {
 
     saveAccountCredentials(acc.email.trim(), CANONICAL_TARGET, acc.password, 'camoufox');
-    if (group) setAccountGroup(acc.email.trim(), CANONICAL_TARGET, group);
+    if (groupName) setAccountGroup(acc.email.trim(), CANONICAL_TARGET, groupName);
 
   }
+
+  if (groupName) broadcastAccounts();
 
 
 
@@ -1003,7 +1080,7 @@ app.post('/api/login/batch', async (req, res) => {
 
       try {
 
-        await runJob(id, acc.email.trim(), acc.password, loginVia, 'camoufox', headless, { skipBackupEmail });
+        await runJob(id, acc.email.trim(), acc.password, loginVia, 'camoufox', headless, backupOpts);
 
       } catch (err) {
 
@@ -1023,7 +1100,7 @@ app.post('/api/login/batch', async (req, res) => {
 
 
 
-async function runJob(id, email, password, target, engine, headless, { forceFresh = false, skipBackupEmail = true } = {}) {
+async function runJob(id, email, password, target, engine, headless, { forceFresh = false, skipBackupEmail = true, backupEmailMode = 'skip' } = {}) {
 
   if (isCancelled(id)) return;
 
@@ -1064,6 +1141,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     forceFresh,
 
     skipBackupEmail,
+
+    backupEmailMode,
 
     onEmailRetry: async (attempt) => {
       if (attempt >= 2) {

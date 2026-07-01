@@ -254,6 +254,47 @@ h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
   color: var(--text);
 }
 
+.batch-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.batch-stat {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.batch-stat.ok { color: var(--success); border-color: rgba(62, 207, 142, 0.35); }
+.batch-stat.err { color: var(--error); border-color: rgba(239, 91, 91, 0.35); }
+.batch-stat.warn { color: var(--warn); border-color: rgba(240, 180, 41, 0.35); }
+.batch-stat.pending { color: var(--accent); border-color: rgba(91, 141, 239, 0.35); }
+.batch-stat.muted { color: var(--muted); }
+
+.accounts-pagination-wrap { margin-top: 0.75rem; }
+
+.accounts-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.accounts-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.accounts-page-num { color: var(--text); min-width: 6rem; text-align: center; }
+
 .queue-warn { color: var(--warn); }
 .queue-err { color: var(--error); }
 

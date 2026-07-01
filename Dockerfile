@@ -26,6 +26,7 @@ ENV CAMOUFOX_INSTALL_DIR=/app/data/camoufox
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/data/playwright
 ENV MOZ_DISABLE_CONTENT_SANDBOX=1
 ENV MOZ_DISABLE_GMP_SANDBOX=1
+ENV NODE_OPTIONS=--max-old-space-size=768
 
 RUN mkdir -p /app/data/profiles /app/screenshots
 

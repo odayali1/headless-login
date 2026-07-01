@@ -9,6 +9,9 @@ let renderScheduled = false;
 let logModalState = { email: null, target: null, jobId: null };
 let groups = [];
 let accountFilters = { group: '', health: '', search: '' };
+let activeBatchMeta = null;
+let accountPage = { page: 1, limit: 50, total: 0, pages: 1 };
+let accountsReloadTimer = null;
 
 const ACTIVE = new Set(['queued', 'starting', 'running']);
 
@@ -33,6 +36,7 @@ const els = {
   cancelQueuedBtn: document.getElementById('cancelQueuedBtn'),
   fillTestBatchBtn: document.getElementById('fillTestBatchBtn'),
   accountsBody: document.getElementById('accountsBody'),
+  accountsPagination: document.getElementById('accountsPagination'),
   refreshAccountsBtn: document.getElementById('refreshAccountsBtn'),
   groupFilter: document.getElementById('groupFilter'),
   healthFilter: document.getElementById('healthFilter'),
@@ -312,20 +316,64 @@ function getBatchProgress() {
   if (!list.length) return null;
 
   const batchIds = [...new Set(list.map((j) => j.batchId))];
+  const preferredId =
+    activeBatchMeta?.batchId && list.some((j) => j.batchId === activeBatchMeta.batchId)
+      ? activeBatchMeta.batchId
+      : null;
   const activeBatchId =
+    preferredId ||
     list.find((j) => ACTIVE.has(j.status))?.batchId ||
     list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.batchId;
   const batchId = activeBatchId || batchIds[0];
   const inBatch = list.filter((j) => j.batchId === batchId);
+  const count = (status) => inBatch.filter((j) => j.status === status).length;
+
+  const done = count('success');
+  const failed = count('failed');
+  const backupRequired = count('backup_email_required');
+  const mfa = count('mfa_required');
+  const cancelled = count('cancelled');
+  const queued = count('queued');
+  const starting = count('starting');
+  const running = count('running');
+  const finished = done + failed + backupRequired + mfa + cancelled;
+  const pending = queued + starting + running;
 
   return {
     batchId,
+    batchGroup:
+      inBatch.find((j) => j.batchGroup)?.batchGroup ||
+      (activeBatchMeta?.batchId === batchId ? activeBatchMeta?.batchGroup : null) ||
+      null,
     total: inBatch.length,
-    done: inBatch.filter((j) => j.status === 'success').length,
-    failed: inBatch.filter((j) => j.status === 'failed' || j.status === 'mfa_required' || j.status === 'backup_email_required').length,
-    queued: inBatch.filter((j) => j.status === 'queued').length,
-    running: inBatch.find((j) => j.status === 'running' || j.status === 'starting') || null,
+    done,
+    failed,
+    backupRequired,
+    mfa,
+    cancelled,
+    queued,
+    starting,
+    running,
+    pending,
+    finished,
+    issueCount: failed + backupRequired + mfa,
+    runningJob: inBatch.find((j) => j.status === 'running' || j.status === 'starting') || null,
   };
+}
+
+function renderBatchSummaryStats(batch) {
+  const chips = [
+    ['ok', `${batch.done} logged in`],
+    batch.failed ? ['err', `${batch.failed} failed`] : null,
+    batch.backupRequired ? ['warn', `${batch.backupRequired} backup email`] : null,
+    batch.mfa ? ['warn', `${batch.mfa} MFA`] : null,
+    batch.cancelled ? ['muted', `${batch.cancelled} cancelled`] : null,
+    batch.pending ? ['pending', `${batch.pending} remaining`] : null,
+  ].filter(Boolean);
+
+  return `<div class="batch-summary-stats">${chips
+    .map(([cls, label]) => `<span class="batch-stat ${cls}">${escapeHtml(label)}</span>`)
+    .join('')}</div>`;
 }
 
 function renderQueueBanner() {
@@ -336,27 +384,29 @@ function renderQueueBanner() {
   const currentLabel = queueState.current?.label?.replace(/ batch$/, '') || '';
 
   if (batch) {
-    const pct = batch.total ? Math.min(100, Math.round((batch.done / batch.total) * 100)) : 0;
-    const runningEmail = batch.running?.email || currentLabel || '—';
-    const stateClass = queueState.busy ? 'busy' : active > 0 ? 'waiting' : 'done';
+    const pct = batch.total ? Math.min(100, Math.round((batch.finished / batch.total) * 100)) : 0;
+    const runningEmail = batch.runningJob?.email || currentLabel || '—';
+    const stateClass = queueState.busy ? 'busy' : batch.pending > 0 ? 'waiting' : 'done';
+    const batchTitle = batch.batchGroup ? `Batch: ${batch.batchGroup}` : 'Batch login';
     const statusLine = queueState.busy
       ? `Processing <strong>${escapeHtml(runningEmail)}</strong>`
-      : batch.queued > 0
+      : batch.pending > 0
         ? '<span class="queue-warn">Queue paused — waiting to resume</span>'
-        : '<strong>Batch finished</strong> — check Session only accounts for Re-login';
+        : '<strong>Batch finished</strong> — see summary below';
 
     els.queueBanner.innerHTML = `
       <div class="queue-banner ${stateClass}">
         <div class="queue-banner-head">
-          <span class="queue-banner-title">Batch</span>
-          <span class="queue-banner-pct">${batch.done} / ${batch.total} complete · ${pct}%</span>
+          <span class="queue-banner-title">${escapeHtml(batchTitle)}</span>
+          <span class="queue-banner-pct">${batch.finished} / ${batch.total} processed · ${pct}%</span>
         </div>
         <div class="progress-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
           <div class="progress-fill" style="width:${pct}%"></div>
         </div>
+        ${renderBatchSummaryStats(batch)}
         <div class="queue-banner-detail">${statusLine}
-          ${batch.failed ? ` · <span class="queue-err">${batch.failed} failed</span>` : ''}
-          ${batch.queued ? ` · ${batch.queued} in queue` : ''}
+          ${batch.issueCount ? ` · <span class="queue-err">${batch.issueCount} need attention</span>` : ''}
+          ${batch.queued ? ` · ${batch.queued} queued` : ''}
         </div>
       </div>`;
     return;
@@ -511,25 +561,16 @@ function formatTime(iso) {
 }
 
 function renderAccounts() {
-  const filtered = accounts.filter((acc) => {
-    if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (!matchesHealthFilter(acc)) return false;
-    if (accountFilters.search && !String(acc.email || '').toLowerCase().includes(accountFilters.search.toLowerCase())) return false;
-    return true;
-  });
-
-  if (!filtered.length) {
+  if (!accounts.length) {
     els.accountsBody.innerHTML = '<tr><td colspan="11" class="empty">No accounts match current filters.</td></tr>';
     return;
   }
 
-  els.accountsBody.innerHTML = filtered
+  els.accountsBody.innerHTML = accounts
     .map((acc) => {
-      const tokenPreview = acc.accessToken
-        ? `${acc.accessToken.slice(0, 24)}…`
-        : '—';
-      const copyBtn = acc.accessToken
-        ? `<button type="button" class="btn small copy" data-account-id="${escapeHtml(acc.id)}">Copy</button>`
+      const tokenPreview = acc.tokenPreview || (acc.hasAccessToken ? 'saved…' : '—');
+      const copyBtn = acc.hasAccessToken
+        ? `<button type="button" class="btn small copy" data-action="copy-token" data-email="${escapeHtml(acc.email)}" data-target="${escapeHtml(acc.target)}">Copy</button>`
         : '';
       const refreshBtn = `<button type="button" class="btn small refresh" data-action="refresh" data-email="${escapeHtml(acc.email)}" data-target="${escapeHtml(acc.target)}">Refresh token</button>`;
       const reloginBtn = `<button type="button" class="btn small relogin" data-action="relogin" data-email="${escapeHtml(acc.email)}" data-target="${escapeHtml(acc.target)}">Re-login</button>`;
@@ -550,7 +591,7 @@ function renderAccounts() {
           <td><code class="scope-tag">${escapeHtml(acc.tokenScope || '—')}</code></td>
           <td>
             <div class="token-cell">
-              <span class="token-preview" title="${acc.accessToken ? 'Token saved' : 'No token'}">${escapeHtml(tokenPreview)}</span>
+              <span class="token-preview" title="${acc.hasAccessToken ? 'Token saved' : 'No token'}">${escapeHtml(tokenPreview)}</span>
               ${copyBtn}
             </div>
           </td>
@@ -569,11 +610,57 @@ function renderAccounts() {
     .join('');
 }
 
+function renderAccountsPagination() {
+  if (!els.accountsPagination) return;
+  const { page, pages, total, limit } = accountPage;
+  if (!total) {
+    els.accountsPagination.innerHTML = '';
+    return;
+  }
+  const from = (page - 1) * limit + 1;
+  const to = Math.min(page * limit, total);
+  els.accountsPagination.innerHTML = `
+    <div class="accounts-pagination">
+      <span class="accounts-page-info">Showing ${from}–${to} of ${total}</span>
+      <div class="accounts-page-actions">
+        <button type="button" class="btn small ghost" id="accountsPrevBtn" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+        <span class="accounts-page-num">Page ${page} / ${pages}</span>
+        <button type="button" class="btn small ghost" id="accountsNextBtn" ${page >= pages ? 'disabled' : ''}>Next</button>
+      </div>
+    </div>`;
+  document.getElementById('accountsPrevBtn')?.addEventListener('click', () => {
+    if (accountPage.page > 1) {
+      accountPage.page -= 1;
+      loadAccounts();
+    }
+  });
+  document.getElementById('accountsNextBtn')?.addEventListener('click', () => {
+    if (accountPage.page < accountPage.pages) {
+      accountPage.page += 1;
+      loadAccounts();
+    }
+  });
+}
+
 async function loadAccounts() {
-  const res = await fetch('/api/accounts');
-  accounts = await res.json();
-  syncGroupsFromAccounts(accounts);
+  const params = new URLSearchParams({
+    page: String(accountPage.page),
+    limit: String(accountPage.limit),
+    group: accountFilters.group || '',
+    health: accountFilters.health || '',
+    search: accountFilters.search || '',
+  });
+  const res = await fetch(`/api/accounts?${params}`);
+  const data = await res.json();
+  accounts = data.accounts || [];
+  accountPage = {
+    page: data.page || 1,
+    limit: data.limit || 50,
+    total: data.total || accounts.length,
+    pages: data.pages || 1,
+  };
   renderAccounts();
+  renderAccountsPagination();
   const statsRes = await fetch('/api/accounts/stats');
   accountStats = await statsRes.json();
   renderAccountStats();
@@ -655,12 +742,14 @@ els.logJobSelect?.addEventListener('change', () => {
 });
 
 els.accountsBody.addEventListener('click', async (e) => {
-  const copyBtn = e.target.closest('[data-account-id]');
+  const copyBtn = e.target.closest('[data-action="copy-token"]');
   if (copyBtn) {
-    const acc = accounts.find((a) => a.id === copyBtn.dataset.accountId);
-    if (!acc?.accessToken) return alert('No token for this account.');
+    const { email, target } = copyBtn.dataset;
     try {
-      await navigator.clipboard.writeText(acc.accessToken);
+      const res = await fetch(accountApiPath(email, target, 'token'));
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No token');
+      await navigator.clipboard.writeText(data.access_token);
       const prev = copyBtn.textContent;
       copyBtn.textContent = 'Copied!';
       setTimeout(() => { copyBtn.textContent = prev; }, 1500);
@@ -786,30 +875,41 @@ function loginAsLabel() {
 }
 
 function currentFilteredAccounts() {
-  return accounts.filter((acc) => {
-    if (accountFilters.group && (acc.group || '') !== accountFilters.group) return false;
-    if (!matchesHealthFilter(acc)) return false;
-    if (accountFilters.search && !String(acc.email || '').toLowerCase().includes(accountFilters.search.toLowerCase())) return false;
-    return true;
+  return accounts;
+}
+
+async function fetchFilteredAccountsForActions() {
+  const params = new URLSearchParams({
+    group: accountFilters.group || '',
+    health: accountFilters.health || '',
+    search: accountFilters.search || '',
   });
+  const res = await fetch(`/api/accounts/emails?${params}`);
+  const data = await res.json();
+  return data.accounts || [];
 }
 
 els.groupFilter?.addEventListener('change', () => {
   accountFilters.group = els.groupFilter.value || '';
-  renderAccounts();
+  accountPage.page = 1;
+  loadAccounts();
 });
 els.healthFilter?.addEventListener('change', () => {
   accountFilters.health = els.healthFilter.value || '';
-  renderAccounts();
+  accountPage.page = 1;
+  loadAccounts();
 });
+let searchDebounce;
 els.searchInput?.addEventListener('input', () => {
   accountFilters.search = els.searchInput.value || '';
-  renderAccounts();
+  accountPage.page = 1;
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => loadAccounts(), 350);
 });
 
 els.assignGroupBtn?.addEventListener('click', async () => {
   const group = String(els.assignGroupInput?.value || '').trim();
-  const selected = currentFilteredAccounts();
+  const selected = await fetchFilteredAccountsForActions();
   if (!selected.length) return alert('No accounts in current filter.');
   const payload = {
     group,
@@ -822,6 +922,7 @@ els.assignGroupBtn?.addEventListener('click', async () => {
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || 'Assign group failed');
+  await loadGroups();
   await loadAccounts();
 });
 
@@ -844,7 +945,7 @@ async function runGroupAction(action) {
 }
 
 async function runFilteredAction(action) {
-  const selected = currentFilteredAccounts();
+  const selected = await fetchFilteredAccountsForActions();
   if (!selected.length) return alert('No accounts match the current filter.');
   const withPassword = selected.filter((a) => a.hasStoredPassword);
   if (action === 'relogin' && withPassword.length === 0) {
@@ -922,13 +1023,21 @@ els.batchBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         accounts: batchAccounts,
         target: els.batchTarget.value,
-        group: els.batchGroup?.value || '',
+        group: (els.batchGroup?.value || '').trim(),
         ...backupLoginBody(),
       }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Batch failed');
+    if (data.batchId) {
+      activeBatchMeta = {
+        batchId: data.batchId,
+        batchGroup: data.batchGroup || (els.batchGroup?.value || '').trim() || null,
+        total: data.count || batchAccounts.length,
+      };
+    }
     els.batchInput.value = '';
+    await loadGroups();
     showFinishedJobs = false;
   } catch (err) {
     alert(err.message);
@@ -1019,11 +1128,6 @@ function connectSSE() {
     for (const job of data.jobs || []) mergeJob(job);
     if (data.jobStats) jobStats = data.jobStats;
     if (data.queue) queueState = data.queue;
-    if (data.accounts) {
-      accounts = data.accounts;
-      syncGroupsFromAccounts(accounts);
-      renderAccounts();
-    }
     if (data.accountStats) {
       accountStats = data.accountStats;
       renderAccountStats();
@@ -1041,6 +1145,13 @@ function connectSSE() {
 
   es.addEventListener('batch', (e) => {
     const data = JSON.parse(e.data);
+    if (data.batchId) {
+      activeBatchMeta = {
+        batchId: data.batchId,
+        batchGroup: data.batchGroup || activeBatchMeta?.batchGroup || null,
+        total: data.total || activeBatchMeta?.total || 0,
+      };
+    }
     for (const job of data.jobs || []) mergeJob(job);
     scheduleRenderJobs();
   });
@@ -1077,15 +1188,11 @@ function connectSSE() {
     onJobLog(JSON.parse(e.data));
   });
 
-  es.addEventListener('accounts', (e) => {
-    accounts = JSON.parse(e.data);
-    syncGroupsFromAccounts(accounts);
-    renderAccounts();
-  });
-
   es.addEventListener('account-stats', (e) => {
     accountStats = JSON.parse(e.data);
     renderAccountStats();
+    clearTimeout(accountsReloadTimer);
+    accountsReloadTimer = setTimeout(() => loadAccounts(), 600);
   });
 
   es.onerror = () => {
@@ -1112,4 +1219,5 @@ fetch('/api/jobs?limit=100')
     renderJobs();
   });
 
+loadGroups();
 loadAccounts();
