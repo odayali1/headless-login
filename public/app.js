@@ -210,7 +210,9 @@ function renderProxyPill() {
   const ipInfo = on && proxyState.host
     ? `${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
     : on ? 'Proxy ON' : 'Proxy OFF (direct — not recommended)';
-  els.proxyLabel.textContent = ipInfo;
+  const bw = proxyState.bandwidth;
+  const bwInfo = bw?.mbTotal != null ? ` · ${bw.mbTotal} MB proxied` : '';
+  els.proxyLabel.textContent = ipInfo + bwInfo;
 }
 
 async function loadProxy() {

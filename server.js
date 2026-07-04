@@ -51,6 +51,7 @@ import {
 } from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled } from './lib/settings.js';
+import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 
 import { resolveEngine } from './lib/browser.js';
 
@@ -157,7 +158,17 @@ app.get('/api/health', async (_req, res) => {
 
 app.get('/api/proxy', (_req, res) => {
 
-  res.json(getProxyStatus());
+  res.json({ ...getProxyStatus(), bandwidth: getBandwidthStats() });
+
+});
+
+
+
+app.post('/api/bandwidth/reset', (_req, res) => {
+
+  resetBandwidthStats();
+
+  res.json({ ok: true, bandwidth: getBandwidthStats() });
 
 });
 
@@ -457,9 +468,7 @@ const queueRefreshJob = createRefreshJobQueue({
 
   enqueueLogin,
 
-  beforeAccountLogin,
-
-  afterAccountLoginSuccess,
+  beforeAccountRefresh,
 
   refreshAccountToken,
 
