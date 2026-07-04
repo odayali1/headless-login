@@ -1180,7 +1180,6 @@ function connectSSE() {
     const job = JSON.parse(e.data);
     mergeJob(job);
     scheduleRenderJobs();
-    checkHealth();
     if (job.status === 'success' || job.status === 'failed') loadAccounts();
   });
 
@@ -1191,8 +1190,6 @@ function connectSSE() {
   es.addEventListener('account-stats', (e) => {
     accountStats = JSON.parse(e.data);
     renderAccountStats();
-    clearTimeout(accountsReloadTimer);
-    accountsReloadTimer = setTimeout(() => loadAccounts(), 600);
   });
 
   es.onerror = () => {
@@ -1204,7 +1201,7 @@ function connectSSE() {
 checkHealth();
 loadProxy();
 loadSmartRefresh();
-setInterval(checkHealth, 15_000);
+setInterval(checkHealth, 60_000);
 connectSSE();
 
 fetch('/api/jobs?limit=100')
