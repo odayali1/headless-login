@@ -128,6 +128,18 @@ GET /api/v1/jobs/{job_id}
 
 ---
 
+## Sync API (bulk / delta / webhooks)
+
+For integrating **1k+ accounts** without polling the full list repeatedly, see **[SYNC-API.md](./SYNC-API.md)**.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/sync/bulk` | Up to 100 emails → tokens + status in one call |
+| GET | `/api/v1/sync/delta?since=<iso>` | Only accounts changed since last sync |
+| POST | `/api/v1/sync/webhooks` | Register `account.token_updated` webhook |
+
+---
+
 ## Refresh vs Re-login
 
 | | **Refresh token** | **Re-login** |

@@ -39,6 +39,7 @@ import {
 } from './lib/db.js';
 
 import { runStartupMigrations } from './lib/migrate.js';
+import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks.js';
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
@@ -84,6 +85,10 @@ const PORT = process.env.PORT || 3847;
 app.use(express.json({ limit: '1mb' }));
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/SYNC-API.md', (_req, res) => {
+  res.type('text/markdown').sendFile(path.join(__dirname, 'SYNC-API.md'));
+});
 
 app.use('/screenshots', express.static(path.join(__dirname, 'screenshots')));
 
@@ -1180,6 +1185,10 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     broadcast('proxy', getProxyStatus());
 
+    if (result.hasToken) {
+      notifyAccountTokenUpdated(email, target, { reason: 'login' }).catch(() => {});
+    }
+
   }
 
   broadcastAccounts();
@@ -1190,6 +1199,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
 app.listen(PORT, async () => {
   await runStartupMigrations();
+  ensureEnvWebhook();
   await ensureCamoufoxInstalled();
   const camoufox = await isCamoufoxAvailable();
   if (!camoufox) {

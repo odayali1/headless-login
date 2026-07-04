@@ -46,7 +46,11 @@ X-Api-Key: YOUR_API_KEY</pre>
       <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/accounts/:email</code></td><td>Single account (?target=outlook)</td></tr>
       <tr><td><span class="pill post">POST</span></td><td><code>/api/v1/accounts/:email/refresh</code></td><td>Queue token refresh</td></tr>
       <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/jobs/:id</code></td><td>Poll job status</td></tr>
+      <tr><td><span class="pill post">POST</span></td><td><code>/api/v1/sync/bulk</code></td><td>Batch token lookup (≤100 emails)</td></tr>
+      <tr><td><span class="pill get">GET</span></td><td><code>/api/v1/sync/delta</code></td><td>Changed accounts since <code>since</code></td></tr>
+      <tr><td><span class="pill post">POST</span></td><td><code>/api/v1/sync/webhooks</code></td><td>Register token-update webhook</td></tr>
     </table>
+    <p class="muted">Full sync guide: <a href="/SYNC-API.md">SYNC-API.md</a> (also in repo root)</p>
 
     <h2>Get all tokens</h2>
     <pre>GET /api/v1/tokens?target=outlook&group=my-group&tokens_only=1</pre>
