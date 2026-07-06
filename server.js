@@ -290,7 +290,6 @@ app.get('/api/smart-refresh', (_req, res) => {
 
 
 const smartRefreshRuntime = {
-  enqueue: enqueueLogin,
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
 };
