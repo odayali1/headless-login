@@ -292,6 +292,10 @@ app.get('/api/smart-refresh', (_req, res) => {
 const smartRefreshRuntime = {
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
+  isLoginQueueBusy: () => {
+    const q = getQueueStatus();
+    return q.busy || q.waiting > 0;
+  },
 };
 
 app.post('/api/smart-refresh/toggle', async (req, res) => {
