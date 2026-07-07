@@ -4,7 +4,7 @@
   "description": "Outlook & Teams headless login via Obscura + Playwright",
   "type": "module",
   "scripts": {
-    "start": "node --max-old-space-size=4096 server.js",
+    "start": "node --max-old-space-size=6144 server.js",
     "obscura": "node scripts/start-obscura.js",
     "camoufox:fetch": "camoufox-js fetch",
     "login:test": "node scripts/cli-login.js"

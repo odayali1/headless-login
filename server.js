@@ -11,7 +11,7 @@ import { ensureCamoufoxInstalled } from './lib/ensure-camoufox.js';
 
 import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 
-import { listAccounts, listAccountsPage, filterAccounts, invalidateAccountsCache } from './lib/accounts.js';
+import { listAccounts, listAccountsPage, filterAccounts, invalidateAccountsCache, toPublicAccount } from './lib/accounts.js';
 import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
 import {
@@ -332,15 +332,7 @@ app.get('/api/accounts', async (req, res) => {
   }
   const all = await listAccounts();
   res.json({
-    accounts: all.map((acc) => {
-      const accessToken = acc.accessToken || null;
-      const { accessToken: _drop, ...rest } = acc;
-      return {
-        ...rest,
-        hasAccessToken: !!accessToken,
-        tokenPreview: accessToken ? `${accessToken.slice(0, 24)}…` : null,
-      };
-    }),
+    accounts: all.map((acc) => toPublicAccount(acc)),
     total: all.length,
     page: 1,
     limit: all.length,
