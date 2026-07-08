@@ -275,6 +275,9 @@ function matchesHealthFilter(acc) {
   if (h === 'expires_soon') {
     return Number.isFinite(acc.tokenExpiresInMin) && acc.tokenExpiresInMin > 0 && acc.tokenExpiresInMin <= 60;
   }
+  if (h === 'expires_20m') {
+    return Number.isFinite(acc.tokenExpiresInMin) && acc.tokenExpiresInMin > 0 && acc.tokenExpiresInMin <= 20;
+  }
   return (acc.health || '') === h;
 }
 
