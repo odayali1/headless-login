@@ -208,23 +208,47 @@ app.post('/api/proxy/rotate', async (_req, res) => {
 
 
 
+let accountsBroadcastTimer = null;
+let accountsBroadcastInFlight = false;
+let accountsBroadcastAgain = false;
+let accountsStatsSeq = 0;
+
 function broadcastAccounts() {
   invalidateAccountsCache();
-  listAccounts({ bustCache: true })
-    .then((accounts) => {
-      broadcast('account-stats', computeAccountStats(accounts));
-    })
-    .catch(() => {});
+  if (accountsBroadcastInFlight) {
+    accountsBroadcastAgain = true;
+    return;
+  }
+  clearTimeout(accountsBroadcastTimer);
+  accountsBroadcastTimer = setTimeout(() => {
+    flushAccountStatsBroadcast().catch(() => {});
+  }, 300);
+}
+
+async function flushAccountStatsBroadcast() {
+  accountsBroadcastInFlight = true;
+  accountsBroadcastAgain = false;
+  try {
+    const accounts = await listAccounts({ bustCache: true });
+    broadcast('account-stats', {
+      ...computeAccountStats(accounts),
+      seq: ++accountsStatsSeq,
+    });
+  } catch {
+    // ignore
+  }
+  accountsBroadcastInFlight = false;
+  if (accountsBroadcastAgain) {
+    accountsBroadcastAgain = false;
+    await flushAccountStatsBroadcast();
+  }
 }
 
 
 
 app.get('/api/accounts/stats', async (_req, res) => {
-
-  const accounts = await listAccounts();
-
+  const accounts = await listAccounts({ bustCache: true });
   res.json(computeAccountStats(accounts));
-
 });
 
 app.get('/api/groups', (_req, res) => {
@@ -663,7 +687,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
       enqueueLogin(async () => {
         try {
           updateJob(id, { status: 'running', message: 'Refreshing LiveProfileCard token…' });
-          await beforeAccountLogin((step, message) => jobLog(id, step, message));
+          await beforeAccountRefresh((step, message) => jobLog(id, step, message));
           const result = await refreshAccountToken(email, CANONICAL_TARGET, {
             engine: 'camoufox',
             jobId: id,
@@ -872,14 +896,14 @@ app.get('/api/events', (req, res) => {
 
   sseClients.add(res);
 
-  listAccounts()
+  listAccounts({ bustCache: true })
     .then((accounts) => {
       res.write(
         `event: connected\ndata: ${JSON.stringify({
           jobs: listSummaries({ limit: 100 }),
           jobStats: jobStats(),
           queue: getQueueStatus(),
-          accountStats: computeAccountStats(accounts),
+          accountStats: { ...computeAccountStats(accounts), seq: ++accountsStatsSeq },
           smartRefresh: getSmartRefreshStatus(),
           proxy: getProxyStatus(),
         })}\n\n`

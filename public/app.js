@@ -75,6 +75,7 @@ const els = {
 };
 
 let proxyState = { enabled: true };
+let accountStatsSeq = 0;
 
 function renderAccountStats() {
   const s = accountStats;
@@ -644,7 +645,7 @@ function renderAccountsPagination() {
   });
 }
 
-async function loadAccounts() {
+async function loadAccounts({ refreshStats = true } = {}) {
   const params = new URLSearchParams({
     page: String(accountPage.page),
     limit: String(accountPage.limit),
@@ -663,9 +664,17 @@ async function loadAccounts() {
   };
   renderAccounts();
   renderAccountsPagination();
-  const statsRes = await fetch('/api/accounts/stats');
-  accountStats = await statsRes.json();
-  renderAccountStats();
+  if (refreshStats) {
+    const statsRes = await fetch('/api/accounts/stats');
+    accountStats = await statsRes.json();
+    renderAccountStats();
+  }
+}
+
+let loadAccountsDebounce;
+function scheduleLoadAccounts() {
+  clearTimeout(loadAccountsDebounce);
+  loadAccountsDebounce = setTimeout(() => loadAccounts({ refreshStats: false }), 400);
 }
 
 async function openAccountLog(email, target) {
@@ -1131,8 +1140,15 @@ function connectSSE() {
     if (data.jobStats) jobStats = data.jobStats;
     if (data.queue) queueState = data.queue;
     if (data.accountStats) {
-      accountStats = data.accountStats;
-      renderAccountStats();
+      const s = data.accountStats;
+      if (s.seq != null && s.seq < accountStatsSeq) {
+        // ignore stale snapshot
+      } else {
+        if (s.seq != null) accountStatsSeq = s.seq;
+        const { seq: _seq, ...stats } = s;
+        accountStats = stats;
+        renderAccountStats();
+      }
     }
     if (data.smartRefresh) {
       smartRefreshState = data.smartRefresh;
@@ -1182,7 +1198,8 @@ function connectSSE() {
     const job = JSON.parse(e.data);
     mergeJob(job);
     scheduleRenderJobs();
-    if (job.status === 'success' || job.status === 'failed') loadAccounts();
+    // Stats come from account-stats SSE (fresh). Only reload the table rows here.
+    if (job.status === 'success' || job.status === 'failed') scheduleLoadAccounts();
   });
 
   es.addEventListener('job-log', (e) => {
@@ -1190,7 +1207,11 @@ function connectSSE() {
   });
 
   es.addEventListener('account-stats', (e) => {
-    accountStats = JSON.parse(e.data);
+    const data = JSON.parse(e.data);
+    if (data.seq != null && data.seq < accountStatsSeq) return;
+    if (data.seq != null) accountStatsSeq = data.seq;
+    const { seq: _seq, ...stats } = data;
+    accountStats = stats;
     renderAccountStats();
   });
 
