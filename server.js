@@ -1214,7 +1214,14 @@ app.listen(PORT, async () => {
   if (proxy.enabled && proxy.configured) {
     try {
       const p = parseProxyUrl(getProxyUrl());
-      console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port} (Camoufox uses local HTTP relay)`);
+      console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port} (upstream via socks5h/HTTP relay)`);
+      if (/fxdx\.in|iproxy/i.test(p.host)) {
+        console.warn(
+          '[proxy] iProxy mobile proxy: turn OFF "Wi-Fi Split" on the Android app for browser automation. ' +
+            'Short curl tests can work with Wi-Fi Split on, but Camoufox/Outlook needs the relay on mobile data. ' +
+            'See https://iproxy.online/blog/wifi-split/'
+        );
+      }
     } catch {
       console.log(`Proxy: ON ${proxy.host}:${proxy.port}`);
     }
