@@ -1220,7 +1220,7 @@ app.listen(PORT, async () => {
         if ((isIproxyWifiSplitMode() || isMobileRelayProxy()) && !getProxyHttpUrl()) {
           console.warn('[proxy] Mobile relay — set PROXY_HTTP_URL=http://host:16857:user:pass on Coolify');
         } else if (isMobileRelayProxy()) {
-          console.log('[proxy] Mobile relay — SOCKS :17539 for Camoufox, HTTP :16857 for curl tokens');
+          console.log('[proxy] iProxy mobile relay — SOCKS5 :17539 default for Camoufox');
         } else if (prefer === 'http' && getProxyHttpUrl()) {
           console.log('[proxy] PROXY_PREFER=http — HTTP :16857 with SOCKS fallback');
         } else {
