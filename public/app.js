@@ -272,6 +272,9 @@ function matchesHealthFilter(acc) {
     const NEEDS_TOKEN = new Set(['session_only', 'needs_refresh', 'failed']);
     return NEEDS_TOKEN.has(acc.health || '');
   }
+  if (h === 'expires_soon') {
+    return Number.isFinite(acc.tokenExpiresInMin) && acc.tokenExpiresInMin > 0 && acc.tokenExpiresInMin <= 60;
+  }
   return (acc.health || '') === h;
 }
 
