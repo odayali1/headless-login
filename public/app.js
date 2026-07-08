@@ -101,6 +101,10 @@ function renderAccountStats() {
   if (els.statTotal) els.statTotal.textContent = s.total ?? 0;
 }
 
+function hasAccountFilters() {
+  return !!(accountFilters.group || accountFilters.health || accountFilters.search);
+}
+
 function renderSmartRefreshPill() {
   if (!els.smartRefreshToggle) return;
   const on = smartRefreshState.enabled;
@@ -665,8 +669,12 @@ async function loadAccounts({ refreshStats = true } = {}) {
   renderAccounts();
   renderAccountsPagination();
   if (refreshStats) {
-    const statsRes = await fetch('/api/accounts/stats');
-    accountStats = await statsRes.json();
+    if (data.stats) {
+      accountStats = data.stats;
+    } else {
+      const statsRes = await fetch(`/api/accounts/stats?${params}`);
+      accountStats = await statsRes.json();
+    }
     renderAccountStats();
   }
 }
@@ -674,7 +682,7 @@ async function loadAccounts({ refreshStats = true } = {}) {
 let loadAccountsDebounce;
 function scheduleLoadAccounts() {
   clearTimeout(loadAccountsDebounce);
-  loadAccountsDebounce = setTimeout(() => loadAccounts({ refreshStats: false }), 400);
+  loadAccountsDebounce = setTimeout(() => loadAccounts(), 400);
 }
 
 async function openAccountLog(email, target) {
@@ -1140,14 +1148,16 @@ function connectSSE() {
     if (data.jobStats) jobStats = data.jobStats;
     if (data.queue) queueState = data.queue;
     if (data.accountStats) {
-      const s = data.accountStats;
-      if (s.seq != null && s.seq < accountStatsSeq) {
-        // ignore stale snapshot
-      } else {
-        if (s.seq != null) accountStatsSeq = s.seq;
-        const { seq: _seq, ...stats } = s;
-        accountStats = stats;
-        renderAccountStats();
+      if (!hasAccountFilters()) {
+        const s = data.accountStats;
+        if (s.seq != null && s.seq < accountStatsSeq) {
+          // ignore stale snapshot
+        } else {
+          if (s.seq != null) accountStatsSeq = s.seq;
+          const { seq: _seq, ...stats } = s;
+          accountStats = stats;
+          renderAccountStats();
+        }
       }
     }
     if (data.smartRefresh) {
@@ -1207,6 +1217,7 @@ function connectSSE() {
   });
 
   es.addEventListener('account-stats', (e) => {
+    if (hasAccountFilters()) return;
     const data = JSON.parse(e.data);
     if (data.seq != null && data.seq < accountStatsSeq) return;
     if (data.seq != null) accountStatsSeq = data.seq;
