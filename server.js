@@ -247,12 +247,7 @@ async function flushAccountStatsBroadcast() {
 
 
 app.get('/api/accounts/stats', async (_req, res) => {
-  const { group = '', health = '', search = '' } = _req.query || {};
-  const accounts = filterAccounts(await listAccounts({ bustCache: true }), {
-    group: String(group || ''),
-    health: String(health || ''),
-    search: String(search || ''),
-  });
+  const accounts = await listAccounts({ bustCache: true });
   res.json(computeAccountStats(accounts));
 });
 
