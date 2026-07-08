@@ -151,9 +151,8 @@ function detectSplitBlocked(httpResults) {
   const pwFail = httpResults.some((r) => r.via === 'playwright-http' && !r.ok);
   if (curlOk && pwFail) {
     console.log('');
-    console.log('  *** Wi-Fi SPLIT BLOCKED ***');
-    console.log('  curl works but Playwright/browser fails — Camoufox refresh will NOT work.');
-    console.log('  Turn traffic split OFF on the iProxy phone app and restart iProxy.');
+    console.log('  *** Wi-Fi SPLIT: HTTP browser blocked, curl OK ***');
+    console.log('  App uses SOCKS for Camoufox + curl for tokens. Check SOCKS result below.');
     console.log('');
   }
 }
