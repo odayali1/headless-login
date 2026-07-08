@@ -43,15 +43,11 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import {
-  beforeAccountLogin,
-  afterAccountLoginSuccess,
-  beforeAccountRefresh,
-  rotateProxyIp,
-} from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp } from './lib/proxy.js';
 
-import { getProxyStatus, setProxyEnabled } from './lib/settings.js';
+import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
+import { closeLocalProxy } from './lib/proxy-local.js';
 
 import { resolveEngine } from './lib/browser.js';
 
@@ -1215,8 +1211,19 @@ app.listen(PORT, async () => {
   const proxy = getProxyStatus();
   console.log(`Dashboard: http://localhost:${PORT}`);
   console.log(`Engine: Camoufox (all operations)`);
-  console.log(`Proxy: ${proxy.enabled ? `ON ${proxy.host}:${proxy.port}` : 'OFF'}`);
+  if (proxy.enabled && proxy.configured) {
+    try {
+      const p = parseProxyUrl(getProxyUrl());
+      console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port} (Camoufox uses local HTTP relay)`);
+    } catch {
+      console.log(`Proxy: ON ${proxy.host}:${proxy.port}`);
+    }
+  } else {
+    console.log('Proxy: OFF');
+  }
   console.log(`Smart refresh: ${isSmartRefreshEnabled() ? 'ON' : 'OFF'}`);
   if (!camoufox) console.warn('Run: npm run camoufox:fetch');
   else console.log('Camoufox: ready');
+  // Drop any stale relay left from a previous crash before first job.
+  await closeLocalProxy().catch(() => {});
 });
