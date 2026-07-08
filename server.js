@@ -45,7 +45,7 @@ import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
 import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp } from './lib/proxy.js';
 
-import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, getProxyHttpUrl } from './lib/settings.js';
+import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 import { closeLocalProxy } from './lib/proxy-local.js';
 
@@ -1216,18 +1216,13 @@ app.listen(PORT, async () => {
       const p = parseProxyUrl(getProxyUrl());
       console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port}`);
       if (/fxdx\.in|iproxy/i.test(p.host)) {
-        if (isIproxyWifiSplitMode()) {
-          if (getProxyHttpUrl()) {
-            console.log('[proxy] Wi-Fi Split mode: will use PROXY_HTTP_URL (direct HTTP CONNECT) from Coolify');
-          } else {
-            console.warn(
-              '[proxy] IPROXY_WIFI_SPLIT=1 but PROXY_HTTP_URL missing — add HTTP :16857 credentials on Coolify'
-            );
-          }
+        const prefer = getProxyPreferMode();
+        if (isIproxyWifiSplitMode() && !getProxyHttpUrl()) {
+          console.warn('[proxy] IPROXY_WIFI_SPLIT=1 — set PROXY_HTTP_URL=http://host:16857:user:pass on Coolify');
+        } else if (prefer === 'http' && getProxyHttpUrl()) {
+          console.log('[proxy] PROXY_PREFER=http — tries HTTP :16857 first, SOCKS fallback');
         } else {
-          console.log(
-            '[proxy] iProxy tip: with Wi-Fi Split ON set IPROXY_WIFI_SPLIT=1 + PROXY_HTTP_URL=http://host:16857:user:pass on Coolify'
-          );
+          console.log('[proxy] PROXY_PREFER=auto — tries SOCKS relay first, HTTP fallback if set');
         }
       }
     } catch {
