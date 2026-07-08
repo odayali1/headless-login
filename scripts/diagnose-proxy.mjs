@@ -207,7 +207,8 @@ if (socksUrl && !socksUrl.startsWith('http')) {
 }
 
 console.log('=== How to read results ===');
-console.log('*** curl OK + Playwright FAIL → Wi-Fi Split blocks browser/Camoufox (turn Split OFF). ***');
+console.log('Split ON: HTTP Playwright FAIL + SOCKS Playwright OK → app uses SOCKS for Camoufox, curl for tokens.');
+console.log('*** curl OK + HTTP Playwright FAIL + SOCKS FAIL → only curl token refresh may work. ***');
 console.log(`- Probe > ${SLOW_PROBE_MS}ms but all Playwright OK → slow uplink (Teams-first in app).`);
 console.log('- login OK + outlook SLOW/FAIL on Split ON → expected; Outlook SPA needs many connections.');
 console.log('- curl 407 on HTTP → wrong password (HTTP :16857 password ≠ SOCKS :17539 password).');
