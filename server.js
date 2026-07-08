@@ -45,7 +45,7 @@ import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
 import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp } from './lib/proxy.js';
 
-import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
+import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 import { closeLocalProxy } from './lib/proxy-local.js';
 
@@ -1217,10 +1217,10 @@ app.listen(PORT, async () => {
       console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port}`);
       if (/fxdx\.in|iproxy/i.test(p.host)) {
         const prefer = getProxyPreferMode();
-        if (isIproxyWifiSplitMode() && !getProxyHttpUrl()) {
-          console.warn('[proxy] IPROXY_WIFI_SPLIT=1 — set PROXY_HTTP_URL=http://host:16857:user:pass on Coolify');
+        if ((isIproxyWifiSplitMode() || isMobileRelayProxy()) && !getProxyHttpUrl()) {
+          console.warn('[proxy] Mobile relay — set PROXY_HTTP_URL=http://host:16857:user:pass on Coolify');
         } else if (prefer === 'http' && getProxyHttpUrl()) {
-          console.log('[proxy] PROXY_PREFER=http — tries HTTP :16857 first, SOCKS fallback');
+          console.log('[proxy] PROXY_PREFER=http — HTTP :16857 (mobile relay session path)');
         } else {
           console.log('[proxy] PROXY_PREFER=auto — tries SOCKS relay first, HTTP fallback if set');
         }
