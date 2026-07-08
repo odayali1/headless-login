@@ -1216,10 +1216,11 @@ app.listen(PORT, async () => {
       const p = parseProxyUrl(getProxyUrl());
       console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port} (upstream via socks5h/HTTP relay)`);
       if (/fxdx\.in|iproxy/i.test(p.host)) {
-        console.warn(
-          '[proxy] iProxy mobile proxy: turn OFF "Wi-Fi Split" on the Android app for browser automation. ' +
-            'Short curl tests can work with Wi-Fi Split on, but Camoufox/Outlook needs the relay on mobile data. ' +
-            'See https://iproxy.online/blog/wifi-split/'
+        console.log(
+          '[proxy] iProxy Wi-Fi Split OK if phone has: Developer → Mobile data always on; ' +
+            'Wi-Fi Split ON; Disable Wi-Fi if no internet → 5 min; Re-enable Wi-Fi → 10 min. ' +
+            'App caps Firefox proxy connections (HTTP/2 off) so Outlook does not flood the Wi-Fi uplink. ' +
+            'https://iproxy.online/blog/wifi-split/'
         );
       }
     } catch {
