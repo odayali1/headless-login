@@ -313,6 +313,7 @@ const smartRefreshRuntime = {
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
   isLoginQueueBusy: () => !!getQueueStatus().blocksCamoufox,
+  enqueueLogin: enqueueLogin,
 };
 
 app.post('/api/smart-refresh/toggle', async (req, res) => {
