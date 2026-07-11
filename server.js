@@ -120,7 +120,7 @@ const loginQueue = createLoginQueue({
   },
 });
 
-const { enqueue: enqueueLogin, getStatus: getQueueStatus } = loginQueue;
+const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQueuePaused } = loginQueue;
 
 
 
@@ -312,10 +312,7 @@ app.get('/api/smart-refresh', (_req, res) => {
 const smartRefreshRuntime = {
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
-  isLoginQueueBusy: () => {
-    const q = getQueueStatus();
-    return q.busy || q.waiting > 0;
-  },
+  isLoginQueueBusy: () => !!getQueueStatus().blocksCamoufox,
 };
 
 app.post('/api/smart-refresh/toggle', async (req, res) => {
@@ -685,6 +682,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
       const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} refresh queued…`);
       accepted.push({ email, target: CANONICAL_TARGET, jobId: id });
       enqueueLogin(async () => {
+        if (isCancelled(id)) return;
         try {
           updateJob(id, { status: 'running', message: 'Refreshing LiveProfileCard token…' });
           await beforeAccountRefresh((step, message) => jobLog(id, step, message));
@@ -722,6 +720,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
       const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} softban check queued…`);
       accepted.push({ email, target: CANONICAL_TARGET, jobId: id });
       enqueueLogin(async () => {
+        if (isCancelled(id)) return;
         try {
           updateJob(id, { status: 'running', message: 'Checking softban status…' });
           const saved = await loadProfile(email);
@@ -864,8 +863,17 @@ app.post('/api/jobs/cancel-queued', (req, res) => {
 
   const cancelled = cancelQueued({ email, target });
 
-  res.json({ cancelled, stats: jobStats() });
+  res.json({ cancelled, stats: jobStats(), queue: getQueueStatus() });
 
+});
+
+
+
+app.post('/api/jobs/pause-queue', (req, res) => {
+  const paused = req.body?.paused !== false;
+  const queue = setLoginQueuePaused(paused);
+  broadcast('queue-status', queue);
+  res.json({ ok: true, queue, stats: jobStats() });
 });
 
 

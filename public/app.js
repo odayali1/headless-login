@@ -3,7 +3,7 @@ let accounts = [];
 let accountStats = { total: 0, available: 0, needs_refresh: 0, failed: 0, softban: 0, mfa_required: 0, other: 0 };
 let smartRefreshState = { enabled: true };
 let jobStats = { queued: 0, starting: 0, running: 0, success: 0, failed: 0, mfa_required: 0, total: 0 };
-let queueState = { busy: false, current: null, waiting: 0, timeoutMin: 10 };
+let queueState = { busy: false, paused: false, current: null, waiting: 0, timeoutMin: 10, blocksCamoufox: false };
 let showFinishedJobs = false;
 let renderScheduled = false;
 let logModalState = { email: null, target: null, jobId: null };
@@ -34,6 +34,7 @@ const els = {
   queueBanner: document.getElementById('queueBanner'),
   clearBtn: document.getElementById('clearBtn'),
   cancelQueuedBtn: document.getElementById('cancelQueuedBtn'),
+  pauseQueueBtn: document.getElementById('pauseQueueBtn'),
   fillTestBatchBtn: document.getElementById('fillTestBatchBtn'),
   accountsBody: document.getElementById('accountsBody'),
   accountsPagination: document.getElementById('accountsPagination'),
@@ -385,12 +386,32 @@ function renderBatchSummaryStats(batch) {
     .join('')}</div>`;
 }
 
+function syncPauseQueueBtn() {
+  if (!els.pauseQueueBtn) return;
+  const paused = !!queueState.paused;
+  els.pauseQueueBtn.textContent = paused ? 'Resume queue' : 'Pause queue';
+  els.pauseQueueBtn.title = paused
+    ? 'Resume login/re-login jobs. Smart Refresh Camoufox yields again while queue runs.'
+    : 'Pause after the current job so Smart Refresh Camoufox can recover soon-expiring tokens.';
+  els.pauseQueueBtn.classList.toggle('warn', paused);
+}
+
 function renderQueueBanner() {
   if (!els.queueBanner) return;
 
   const batch = getBatchProgress();
   const active = (jobStats.running || 0) + (jobStats.starting || 0) + (jobStats.queued || 0);
   const currentLabel = queueState.current?.label?.replace(/ batch$/, '') || '';
+  syncPauseQueueBtn();
+
+  if (queueState.paused && !queueState.busy) {
+    els.queueBanner.innerHTML = `
+      <div class="queue-banner waiting">
+        <div class="queue-banner-head"><span class="queue-banner-title">Queue paused</span></div>
+        <div class="queue-banner-detail"><span class="queue-warn">Paused</span> — ${queueState.waiting || active} job(s) waiting. Smart Refresh Camoufox can run. Click <strong>Resume queue</strong> when ready.</div>
+      </div>`;
+    return;
+  }
 
   if (batch) {
     const pct = batch.total ? Math.min(100, Math.round((batch.finished / batch.total) * 100)) : 0;
@@ -398,7 +419,7 @@ function renderQueueBanner() {
     const stateClass = queueState.busy ? 'busy' : batch.pending > 0 ? 'waiting' : 'done';
     const batchTitle = batch.batchGroup ? `Batch: ${batch.batchGroup}` : 'Batch login';
     const statusLine = queueState.busy
-      ? `Processing <strong>${escapeHtml(runningEmail)}</strong>`
+      ? `Processing <strong>${escapeHtml(runningEmail)}</strong>${queueState.paused ? ' · <span class="queue-warn">will pause after this job</span>' : ''}`
       : batch.pending > 0
         ? '<span class="queue-warn">Queue paused — waiting to resume</span>'
         : '<strong>Batch finished</strong> — see summary below';
@@ -425,7 +446,9 @@ function renderQueueBanner() {
     els.queueBanner.innerHTML = `
       <div class="queue-banner busy">
         <div class="queue-banner-head"><span class="queue-banner-title">Queue active</span></div>
-        <div class="queue-banner-detail">Processing <strong>${escapeHtml(currentLabel)}</strong></div>
+        <div class="queue-banner-detail">Processing <strong>${escapeHtml(currentLabel)}</strong>${
+          queueState.paused ? ' · <span class="queue-warn">will pause after this job</span>' : ''
+        }</div>
       </div>`;
     return;
   }
@@ -433,7 +456,7 @@ function renderQueueBanner() {
   if (active > 0) {
     els.queueBanner.innerHTML = `
       <div class="queue-banner waiting">
-        <div class="queue-banner-detail"><span class="queue-warn">Queue idle</span> — ${active} job(s) waiting. Try Cancel queued or refresh the page.</div>
+        <div class="queue-banner-detail"><span class="queue-warn">Queue idle</span> — ${active} job(s) waiting. Try <strong>Pause queue</strong>, <strong>Cancel queued</strong>, or refresh the page.</div>
       </div>`;
     return;
   }
@@ -1075,16 +1098,34 @@ els.fillTestBatchBtn?.addEventListener('click', () => {
 els.cancelQueuedBtn?.addEventListener('click', async () => {
   const queued = jobStats.queued || 0;
   if (!queued) return alert('No queued jobs to cancel.');
-  if (!confirm(`Cancel ${queued} queued job(s)? Running job will finish; the rest will be skipped.`)) return;
+  if (!confirm(`Cancel ${queued} queued job(s)? Running job will finish; the rest will be skipped.\n\nThis frees Camoufox for Smart Refresh recovery.`)) return;
   try {
     const res = await fetch('/api/jobs/cancel-queued', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const data = await res.json();
     if (data.stats) jobStats = data.stats;
+    if (data.queue) queueState = data.queue;
     for (const [id, job] of jobs) {
       if (job.status === 'queued') {
         jobs.set(id, { ...job, status: 'cancelled', message: 'Cancelled' });
       }
     }
+    renderJobs();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+els.pauseQueueBtn?.addEventListener('click', async () => {
+  const nextPaused = !queueState.paused;
+  try {
+    const res = await fetch('/api/jobs/pause-queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused: nextPaused }),
+    });
+    const data = await res.json();
+    if (data.queue) queueState = data.queue;
+    if (data.stats) jobStats = data.stats;
     renderJobs();
   } catch (err) {
     alert(err.message);
