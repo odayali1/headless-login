@@ -312,8 +312,8 @@ app.get('/api/smart-refresh', (_req, res) => {
 const smartRefreshRuntime = {
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
+  // Only user login/relogin/manual queue jobs block Camoufox — smart-refresh uses its own parallel pool.
   isLoginQueueBusy: () => !!getQueueStatus().blocksCamoufox,
-  enqueueLogin: enqueueLogin,
 };
 
 app.post('/api/smart-refresh/toggle', async (req, res) => {
