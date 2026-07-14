@@ -703,7 +703,8 @@ async function loadAccounts({ refreshStats = true } = {}) {
 let loadAccountsDebounce;
 function scheduleLoadAccounts() {
   clearTimeout(loadAccountsDebounce);
-  loadAccountsDebounce = setTimeout(() => loadAccounts(), 400);
+  // Job SSE fires often during cookie recovery — don't thrash the table.
+  loadAccountsDebounce = setTimeout(() => loadAccounts({ refreshStats: false }), 2_000);
 }
 
 async function openAccountLog(email, target) {
@@ -902,7 +903,20 @@ els.accountsBody.addEventListener('click', async (e) => {
   }
 });
 
-els.refreshAccountsBtn.addEventListener('click', () => loadAccounts());
+els.refreshAccountsBtn.addEventListener('click', async () => {
+  const btn = els.refreshAccountsBtn;
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = 'Loading…';
+  try {
+    // Stats already stream via SSE; only reload the visible page of rows.
+    await loadAccounts({ refreshStats: false });
+  } finally {
+    btn.textContent = prev;
+    btn.disabled = false;
+  }
+});
 
 function getLoginAsOverride() {
   return els.actionTarget?.value || '';

@@ -220,16 +220,18 @@ function broadcastAccounts() {
     return;
   }
   clearTimeout(accountsBroadcastTimer);
+  // Longer debounce under bulk cookie/Camoufox refresh — avoid scanning ~1k profiles every 300ms.
   accountsBroadcastTimer = setTimeout(() => {
     flushAccountStatsBroadcast().catch(() => {});
-  }, 300);
+  }, 2_500);
 }
 
 async function flushAccountStatsBroadcast() {
   accountsBroadcastInFlight = true;
   accountsBroadcastAgain = false;
   try {
-    const accounts = await listAccounts({ bustCache: true });
+    // Fresh rebuild once (cache was invalidated); do not force a second bust.
+    const accounts = await listAccounts();
     broadcast('account-stats', {
       ...computeAccountStats(accounts),
       seq: ++accountsStatsSeq,
@@ -240,14 +242,17 @@ async function flushAccountStatsBroadcast() {
   accountsBroadcastInFlight = false;
   if (accountsBroadcastAgain) {
     accountsBroadcastAgain = false;
-    await flushAccountStatsBroadcast();
+    clearTimeout(accountsBroadcastTimer);
+    accountsBroadcastTimer = setTimeout(() => {
+      flushAccountStatsBroadcast().catch(() => {});
+    }, 2_500);
   }
 }
 
 
 
 app.get('/api/accounts/stats', async (_req, res) => {
-  const accounts = await listAccounts({ bustCache: true });
+  const accounts = await listAccounts();
   res.json(computeAccountStats(accounts));
 });
 

@@ -32,4 +32,4 @@ RUN mkdir -p /app/data/profiles /app/screenshots
 
 EXPOSE 3847
 
-CMD ["node", "server.js"]
+CMD ["node", "--max-old-space-size=6144", "server.js"]
