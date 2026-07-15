@@ -412,7 +412,15 @@ function renderQueueBanner() {
 
   const batch = getBatchProgress();
   const active = (jobStats.running || 0) + (jobStats.starting || 0) + (jobStats.queued || 0);
-  const currentLabel = queueState.current?.label?.replace(/ batch$/, '') || '';
+  const currentJobs = queueState.currentJobs?.length
+    ? queueState.currentJobs
+    : queueState.current
+      ? [queueState.current]
+      : [];
+  const currentLabel = currentJobs
+    .map((c) => c.label?.replace(/ batch$/, '') || '')
+    .filter(Boolean)
+    .join(' · ');
   syncPauseQueueBtn();
 
   if (queueState.paused && !queueState.busy) {
@@ -426,11 +434,15 @@ function renderQueueBanner() {
 
   if (batch) {
     const pct = batch.total ? Math.min(100, Math.round((batch.finished / batch.total) * 100)) : 0;
-    const runningEmail = batch.runningJob?.email || currentLabel || '—';
+    const runningEmail = currentLabel || batch.runningJob?.email || '—';
     const stateClass = queueState.busy ? 'busy' : batch.pending > 0 ? 'waiting' : 'done';
     const batchTitle = batch.batchGroup ? `Batch: ${batch.batchGroup}` : 'Batch login';
+    const parallelHint =
+      queueState.parallel > 1 && queueState.busy
+        ? ` <span class="muted">(${queueState.running || currentJobs.length}/${queueState.parallel})</span>`
+        : '';
     const statusLine = queueState.busy
-      ? `Processing <strong>${escapeHtml(runningEmail)}</strong>${queueState.paused ? ' · <span class="queue-warn">will pause after this job</span>' : ''}`
+      ? `Processing <strong>${escapeHtml(runningEmail)}</strong>${parallelHint}${queueState.paused ? ' · <span class="queue-warn">will pause after current</span>' : ''}`
       : batch.pending > 0
         ? '<span class="queue-warn">Queue paused — waiting to resume</span>'
         : '<strong>Batch finished</strong> — see summary below';
@@ -456,9 +468,11 @@ function renderQueueBanner() {
   if (queueState.busy && currentLabel) {
     els.queueBanner.innerHTML = `
       <div class="queue-banner busy">
-        <div class="queue-banner-head"><span class="queue-banner-title">Queue active</span></div>
+        <div class="queue-banner-head"><span class="queue-banner-title">Queue active${
+          queueState.parallel > 1 ? ` · ${queueState.running || currentJobs.length}/${queueState.parallel} parallel` : ''
+        }</span></div>
         <div class="queue-banner-detail">Processing <strong>${escapeHtml(currentLabel)}</strong>${
-          queueState.paused ? ' · <span class="queue-warn">will pause after this job</span>' : ''
+          queueState.paused ? ' · <span class="queue-warn">will pause after current</span>' : ''
         }</div>
       </div>`;
     return;
@@ -480,8 +494,18 @@ function renderQueueBanner() {
 
 function renderJobsStatsBar() {
   const active = jobStats.running + jobStats.starting + jobStats.queued;
-  const processing = queueState.busy && queueState.current?.label
-    ? `<span class="stat-pill warn-stat" title="Currently running on the login queue">Now: <strong>${escapeHtml(queueState.current.label)}</strong></span>`
+  const runningLabels = (queueState.currentJobs?.length
+    ? queueState.currentJobs
+    : queueState.current
+      ? [queueState.current]
+      : []
+  )
+    .map((c) => c.label)
+    .filter(Boolean);
+  const processing = queueState.busy && runningLabels.length
+    ? `<span class="stat-pill warn-stat" title="Currently running on the login queue">Now: <strong>${escapeHtml(runningLabels.join(' · '))}</strong>${
+        queueState.parallel > 1 ? ` <span class="muted">×${queueState.parallel}</span>` : ''
+      }</span>`
     : '';
   const stuckHint = !queueState.busy && active > 0
     ? `<span class="stat-pill warn-stat" title="Jobs are queued but nothing is processing — try Cancel queued or restart the server">Queue idle</span>`

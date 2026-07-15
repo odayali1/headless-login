@@ -121,6 +121,9 @@ const loginQueue = createLoginQueue({
 });
 
 const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQueuePaused } = loginQueue;
+if (loginQueue.parallel > 1) {
+  console.log(`[queue] Login parallel: ${loginQueue.parallel} (LOGIN_PARALLEL)`);
+}
 
 
 
