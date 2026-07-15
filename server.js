@@ -1195,11 +1195,19 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     backupEmailMode,
 
-    onEmailRetry: async (attempt) => {
-      // Soft retries first; at most one IP rotate per login job (global cooldown also applies).
-      if (attempt !== 3 || emailLookupRotated) return { rotated: false };
+    onEmailRetry: async (attempt, meta = {}) => {
+      // At most one IP rotate per login job.
+      // Lookup glitches → rotate on attempt 2; "stuck on email" → wait until attempt 3.
+      if (emailLookupRotated) return { rotated: false };
+      const reason = meta.reason || 'stuck';
+      if (reason === 'not_found') return { rotated: false }; // real missing account — IP won't help
+      const ready =
+        (reason === 'lookup_failed' && attempt >= 2) ||
+        (reason === 'stuck' && attempt >= 3);
+      if (!ready) return { rotated: false };
+
       emailLookupRotated = true;
-      jobLog(id, 'proxy', 'Email lookup failed — rotating proxy once and retrying…');
+      jobLog(id, 'proxy', `Email step blocked (${reason}) — rotating proxy once and retrying…`);
       const result = await rotateProxyIp((step, message) => jobLog(id, step, message)).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };
