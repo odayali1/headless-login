@@ -1202,7 +1202,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
       const reason = meta.reason || 'stuck';
       if (reason === 'not_found') return { rotated: false }; // real missing account — IP won't help
       const ready =
-        (reason === 'lookup_failed' && attempt >= 2) ||
+        ((reason === 'lookup_failed' || reason === 'throttled') && attempt >= 2) ||
         (reason === 'stuck' && attempt >= 3);
       if (!ready) return { rotated: false };
 
