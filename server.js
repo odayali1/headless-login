@@ -152,9 +152,13 @@ app.get('/api/health', async (_req, res) => {
 
 
 
+function proxyStatusPayload() {
+  return { ...getProxyStatus(), bandwidth: getBandwidthStats() };
+}
+
 app.get('/api/proxy', (_req, res) => {
 
-  res.json({ ...getProxyStatus(), bandwidth: getBandwidthStats() });
+  res.json(proxyStatusPayload());
 
 });
 
@@ -176,7 +180,7 @@ app.post('/api/proxy/toggle', (req, res) => {
 
   setProxyEnabled(enabled !== false);
 
-  const status = getProxyStatus();
+  const status = proxyStatusPayload();
 
   broadcast('proxy', status);
 
@@ -192,7 +196,7 @@ app.post('/api/proxy/rotate', async (_req, res) => {
 
     await rotateProxyIp((step, message) => console.log(`[${step}]`, message));
 
-    const status = getProxyStatus();
+    const status = proxyStatusPayload();
 
     broadcast('proxy', status);
 
@@ -923,7 +927,7 @@ app.get('/api/events', (req, res) => {
           queue: getQueueStatus(),
           accountStats: { ...computeAccountStats(accounts), seq: ++accountsStatsSeq },
           smartRefresh: getSmartRefreshStatus(),
-          proxy: getProxyStatus(),
+          proxy: proxyStatusPayload(),
         })}\n\n`
       );
     })
@@ -934,7 +938,7 @@ app.get('/api/events', (req, res) => {
           jobStats: jobStats(),
           queue: getQueueStatus(),
           smartRefresh: getSmartRefreshStatus(),
-          proxy: getProxyStatus(),
+          proxy: proxyStatusPayload(),
         })}\n\n`
       );
     });
@@ -1161,7 +1165,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
   updateJob(id, { status: 'starting', message: 'Starting Camoufox…' });
 
-
+  let emailLookupRotated = false;
 
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
@@ -1192,11 +1196,16 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt) => {
-      if (attempt >= 2) {
-        jobLog(id, 'proxy', 'Email lookup failed — rotating proxy and retrying…');
-        await rotateProxyIp((step, message) => jobLog(id, step, message)).catch(() => {});
-        broadcast('proxy', getProxyStatus());
-      }
+      // Soft retries first; at most one IP rotate per login job (global cooldown also applies).
+      if (attempt !== 3 || emailLookupRotated) return { rotated: false };
+      emailLookupRotated = true;
+      jobLog(id, 'proxy', 'Email lookup failed — rotating proxy once and retrying…');
+      const result = await rotateProxyIp((step, message) => jobLog(id, step, message)).catch((err) => {
+        jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
+        return { rotated: false };
+      });
+      broadcast('proxy', proxyStatusPayload());
+      return result || { rotated: false };
     },
 
     onProgress: ({ step, message, ...extra }) => jobLog(id, step, message),
@@ -1225,7 +1234,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     await afterAccountLoginSuccess();
 
-    broadcast('proxy', getProxyStatus());
+    broadcast('proxy', proxyStatusPayload());
 
     if (result.hasToken) {
       notifyAccountTokenUpdated(email, target, { reason: 'login' }).catch(() => {});

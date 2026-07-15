@@ -205,6 +205,17 @@ els.importDataBtn?.addEventListener('click', async () => {
   }
 });
 
+function applyProxyState(next) {
+  if (!next || typeof next !== 'object') return;
+  const prevBw = proxyState.bandwidth;
+  proxyState = {
+    ...proxyState,
+    ...next,
+    // SSE updates used to omit bandwidth → counter flashed then vanished.
+    bandwidth: next.bandwidth ?? prevBw,
+  };
+}
+
 function renderProxyPill() {
   if (!els.proxyToggle) return;
   const on = proxyState.enabled;
@@ -219,7 +230,7 @@ function renderProxyPill() {
 
 async function loadProxy() {
   const res = await fetch('/api/proxy');
-  proxyState = await res.json();
+  applyProxyState(await res.json());
   renderProxyPill();
 }
 
@@ -231,7 +242,7 @@ els.proxyToggle?.addEventListener('click', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled: next }),
   });
-  proxyState = await res.json();
+  applyProxyState(await res.json());
   renderProxyPill();
 });
 
@@ -244,7 +255,7 @@ async function checkHealth() {
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
-    if (data.proxy) proxyState = { ...proxyState, ...data.proxy };
+    if (data.proxy) applyProxyState(data.proxy);
     renderProxyPill();
     const online = data.camoufox;
     els.obscuraStatus.className = `status-pill ${online ? 'online' : 'offline'}`;
@@ -1216,7 +1227,7 @@ function connectSSE() {
       renderSmartRefreshPill();
     }
     if (data.proxy) {
-      proxyState = data.proxy;
+      applyProxyState(data.proxy);
       renderProxyPill();
     }
     renderJobs();
@@ -1246,7 +1257,7 @@ function connectSSE() {
   });
 
   es.addEventListener('proxy', (e) => {
-    proxyState = JSON.parse(e.data);
+    applyProxyState(JSON.parse(e.data));
     renderProxyPill();
   });
 
