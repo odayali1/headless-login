@@ -1196,8 +1196,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt, meta = {}) => {
-      // At most one IP rotate per login job.
-      // Lookup glitches → rotate on attempt 2; "stuck on email" → wait until attempt 3.
+      // At most one IP rotate per login job (429 may force-bypass global cooldown).
       if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
       if (reason === 'not_found') return { rotated: false }; // real missing account — IP won't help
@@ -1207,8 +1206,15 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
       if (!ready) return { rotated: false };
 
       emailLookupRotated = true;
-      jobLog(id, 'proxy', `Email step blocked (${reason}) — rotating proxy once and retrying…`);
-      const result = await rotateProxyIp((step, message) => jobLog(id, step, message)).catch((err) => {
+      const force = reason === 'throttled';
+      jobLog(
+        id,
+        'proxy',
+        force
+          ? 'Microsoft 429 Too Many Requests — forcing IP rotation…'
+          : `Email step blocked (${reason}) — rotating proxy once and retrying…`
+      );
+      const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force }).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };
       });
