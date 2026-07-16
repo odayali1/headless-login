@@ -50,7 +50,13 @@ try {
       console.log(`[job] [${step}] ${message}`);
       if (step === 'password') hitPassword = true;
     },
-    onEmailRetry: async () => ({ rotated: false }),
+    onEmailRetry: async (attempt) => {
+      if (attempt >= 2) {
+        log('proxy', 'Email lookup failed — rotating proxy…');
+        await rotateProxyIp(log, { force: true });
+        await new Promise((r) => setTimeout(r, Number(process.env.PROXY_POST_ROTATE_SETTLE_MS || 8_000)));
+      }
+    },
   });
   console.log(
     JSON.stringify(
