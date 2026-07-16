@@ -1205,19 +1205,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     backupEmailMode,
 
-    // cce297d: lookup glitch = GetCredentialType throttle → force rotate + reopen Camoufox.
-    onEmailRetry: async (attempt) => {
-      if (attempt >= 2) {
-        jobLog(id, 'proxy', 'Email lookup failed — rotating proxy and retrying…');
-        await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true }).catch(() => {});
-        const settle = Number(process.env.PROXY_POST_ROTATE_SETTLE_MS || 8_000);
-        if (settle > 0) {
-          jobLog(id, 'proxy', `Settling ${Math.round(settle / 1000)}s after email-retry rotate…`);
-          await sleep(settle);
-        }
-        broadcast('proxy', getProxyStatus());
-      }
-    },
+    // Never rotate mid-login — changeip near GetCredentialType causes lookup failures.
+    onEmailRetry: async () => {},
 
     onProgress: ({ step, message, ...extra }) => jobLog(id, step, message),
 
