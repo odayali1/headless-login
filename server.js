@@ -1181,7 +1181,11 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
-  updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
+
+
+  updateJob(id, { status: 'running', message: 'Browser ready ΓÇö logging inΓÇª' });
+
+
 
   const result = await loginMicrosoft({
 
@@ -1204,21 +1208,37 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt, meta = {}) => {
-      // Pre-429-force-rotate behavior: at most one IP rotate per login job.
+      // Only consume the one-rotate budget after a real IP change. Overnight logs marked
+      // emailLookupRotated=true after failed busy-rotates, then soft-reloaded 544├ù on the same 429 IP.
       if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
-      if (reason === 'not_found') return { rotated: false };
+      if (reason === 'not_found') return { rotated: false }; // real missing account ΓÇö IP won't help
       const ready =
-        (reason === 'lookup_failed' && attempt >= 2) ||
+        ((reason === 'lookup_failed' || reason === 'throttled') && attempt >= 2) ||
         (reason === 'stuck' && attempt >= 3);
       if (!ready) return { rotated: false };
 
-      emailLookupRotated = true;
-      jobLog(id, 'proxy', `Email step blocked (${reason}) — rotating proxy once and retrying…`);
-      const result = await rotateProxyIp((step, message) => jobLog(id, step, message)).catch((err) => {
+      const force = reason === 'throttled';
+      jobLog(
+        id,
+        'proxy',
+        force
+          ? 'Microsoft 429 Too Many Requests ΓÇö forcing IP rotationΓÇª'
+          : `Email step blocked (${reason}) ΓÇö rotating proxy once and retryingΓÇª`
+      );
+      const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force }).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };
       });
+      if (result?.rotated) {
+        emailLookupRotated = true;
+      } else {
+        jobLog(
+          id,
+          'proxy',
+          `IP rotate not completed (${result?.reason || 'unknown'}) ΓÇö will retry rotate on next attempt`
+        );
+      }
       broadcast('proxy', proxyStatusPayload());
       return result || { rotated: false };
     },
