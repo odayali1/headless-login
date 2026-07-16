@@ -43,7 +43,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive } from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
@@ -1181,6 +1181,7 @@ let emailLookupRotated = false;
   let throttleRotatesUsed = 0;
   const MAX_THROTTLE_ROTATES = Number(process.env.LOGIN_MAX_THROTTLE_ROTATES || 2);
 
+  try {
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
@@ -1284,6 +1285,9 @@ let emailLookupRotated = false;
   }
 
   broadcastAccounts();
+  } finally {
+    endLoginProxyExclusive();
+  }
 
 }
 
