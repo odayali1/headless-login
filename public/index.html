@@ -176,7 +176,11 @@
           <button type="button" class="btn ghost" id="groupSoftbanBtn">Softban check group</button>
           <button type="button" class="btn ghost" id="groupExportBtn">Export tokens group</button>
         </div>
-        <p class="hint">One account per email (API always <code>target: outlook</code>). <strong>Login via Teams</strong> still saves the same LiveProfileCard token. <strong>Never logged in</strong> = batch stopped before login ran.</p>
+        <label class="checkbox-row relogin-skip-row">
+          <input type="checkbox" id="reloginSkipBackupEmail" checked />
+          Skip backup-email prompt when Microsoft shows a skip button (Re-login)
+        </label>
+        <p class="hint">One account per email (API always <code>target: outlook</code>). <strong>Login via Teams</strong> still saves the same LiveProfileCard token. <strong>Never logged in</strong> = batch stopped before login ran. The checkbox above applies to row / filtered / group <strong>Re-login</strong> (batch paste has its own).</p>
         <div class="accounts-table-wrap">
           <table class="accounts-table" id="accountsTable">
             <thead>

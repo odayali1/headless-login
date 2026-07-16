@@ -29,6 +29,7 @@ const els = {
   batchTarget: document.getElementById('batchTarget'),
   batchGroup: document.getElementById('batchGroup'),
   batchSkipBackupEmail: document.getElementById('batchSkipBackupEmail'),
+  reloginSkipBackupEmail: document.getElementById('reloginSkipBackupEmail'),
   batchBtn: document.getElementById('batchBtn'),
   jobsList: document.getElementById('jobsList'),
   queueBanner: document.getElementById('queueBanner'),
@@ -268,8 +269,15 @@ async function checkHealth() {
   }
 }
 
+/** Batch paste login — uses the batch checkbox. */
 function backupLoginBody() {
   const skip = els.batchSkipBackupEmail?.checked !== false;
+  return { skipBackupEmail: skip };
+}
+
+/** Row / filtered / group Re-login — dedicated checkbox (default checked). */
+function reloginBackupBody() {
+  const skip = els.reloginSkipBackupEmail?.checked !== false;
   return { skipBackupEmail: skip };
 }
 
@@ -916,7 +924,9 @@ els.accountsBody.addEventListener('click', async (e) => {
       return alert('No saved password for this account. Log in once from the form above.');
     }
     const loginAs = getLoginAsOverride();
-    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password?`)) return;
+    const skipBackup = reloginBackupBody().skipBackupEmail;
+    const skipNote = skipBackup ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
+    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password${skipNote}?`)) return;
     actionBtn.disabled = true;
     try {
       const res = await fetch(accountApiPath(email, target, 'relogin'), {
@@ -925,7 +935,7 @@ els.accountsBody.addEventListener('click', async (e) => {
         body: JSON.stringify({
           engine: 'auto',
           loginAs: loginAs || undefined,
-          ...backupLoginBody(),
+          ...reloginBackupBody(),
         }),
       });
       const data = await res.json();
@@ -1018,14 +1028,19 @@ els.assignGroupBtn?.addEventListener('click', async () => {
 async function runGroupAction(action) {
   const group = accountFilters.group || String(els.assignGroupInput?.value || '').trim();
   if (!group) return alert('Pick a group from filter or type a group name first.');
-  const loginAs = getLoginAsOverride();
+  const backup =
+    action === 'relogin' ? reloginBackupBody() : backupLoginBody();
+  if (action === 'relogin') {
+    const skipNote = backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
+    if (!confirm(`Re-login group "${group}"${loginAsLabel()}${skipNote}?`)) return;
+  }
   const res = await fetch(`/api/groups/${encodeURIComponent(group)}/action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action,
       loginAs: getLoginAsOverride(),
-      ...backupLoginBody(),
+      ...backup,
     }),
   });
   const data = await res.json();
@@ -1043,7 +1058,14 @@ async function runFilteredAction(action) {
   const count = action === 'relogin' ? withPassword.length : selected.length;
   const verb = action === 'relogin' ? 'Re-login' : 'Refresh token for';
   const loginAs = getLoginAsOverride();
-  if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}?`)) return;
+  const backup = action === 'relogin' ? reloginBackupBody() : backupLoginBody();
+  const skipNote =
+    action === 'relogin'
+      ? backup.skipBackupEmail
+        ? ' (skip backup-email if shown)'
+        : ' (will NOT auto-skip backup-email)'
+      : '';
+  if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}${skipNote}?`)) return;
   const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: 'outlook' }));
   const res = await fetch('/api/accounts/bulk-action', {
     method: 'POST',
@@ -1052,7 +1074,7 @@ async function runFilteredAction(action) {
       action,
       accounts: list,
       loginAs,
-      ...backupLoginBody(),
+      ...backup,
     }),
   });
   const data = await res.json();

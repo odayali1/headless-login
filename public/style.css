@@ -464,6 +464,10 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer;
 }
 .checkbox-row input { width: auto; margin: 0; }
+.relogin-skip-row {
+  margin: 0.35rem 0 0.5rem;
+  max-width: 42rem;
+}
 .hint code { font-family: var(--mono); background: var(--surface2); padding: 0.1rem 0.35rem; border-radius: 4px; }
 
 .btn {
