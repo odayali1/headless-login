@@ -1238,6 +1238,14 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
       if (result?.rotated) {
         if (isThrottle) throttleRotatesUsed += 1;
         else emailLookupRotated = true;
+      } else if (result?.reason === 'same_ip') {
+        // Fake rotate burns an attempt — don't loop forever on the same burned IP.
+        if (isThrottle) throttleRotatesUsed += 1;
+        jobLog(
+          id,
+          'proxy',
+          `IP rotate did not change exit IP${result.exitIp ? ` (still ${result.exitIp})` : ''} — Microsoft 429 will continue until changeip works`
+        );
       } else if (result?.reason === 'recent_rotate') {
         jobLog(id, 'proxy', 'Reusing IP another login job just rotated — waiting before retry');
       } else {
