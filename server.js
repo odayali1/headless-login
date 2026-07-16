@@ -1202,10 +1202,10 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     backupEmailMode,
 
-    // Match cce297d: rotate on email retry (force bypasses cooldown). Camoufox closed in login first.
+    // Soft-reload on attempt 2; rotate at most once on attempt 3+ (login closes Camoufox first).
     onEmailRetry: async (attempt) => {
-      if (attempt < 2) return { rotated: false };
-      jobLog(id, 'proxy', 'Email lookup failed — rotating proxy and retrying…');
+      if (attempt < 3) return { rotated: false };
+      jobLog(id, 'proxy', 'Email still blocked after soft reload — rotating proxy once…');
       const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true }).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };

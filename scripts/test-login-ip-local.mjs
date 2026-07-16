@@ -82,7 +82,7 @@ if (!rot?.rotated) {
   process.exit(2);
 }
 
-console.log('[test] Step 2 — Camoufox login (smart-refresh NOT running)…');
+console.log('[test] Camoufox login (no smart-refresh, soft email retry — matches fixed production path)…');
 await beforeAccountLogin(log);
 const result = await loginMicrosoft({
   email,
@@ -92,9 +92,10 @@ const result = await loginMicrosoft({
   forceFresh: true,
   jobId: 'local-test',
   onProgress: ({ step, message }) => console.log(`[job:${email}] [${step}] ${message}`),
-  onEmailRetry: async (attempt, { reason } = {}) => {
-    if (reason !== 'throttled' && reason !== 'lookup_failed') return { rotated: false };
-    console.log(`[test] Email retry ${attempt} reason=${reason} — force rotate`);
+  onEmailRetry: async (attempt) => {
+    // Same as fixed server: soft path handled inside login; only rotate late if asked.
+    if (attempt < 3) return { rotated: false };
+    console.log(`[test] Email retry ${attempt} — one force rotate`);
     return rotateProxyIp(log, { force: true });
   },
 });
