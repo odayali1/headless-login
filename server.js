@@ -1178,16 +1178,10 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
   updateJob(id, { status: 'starting', message: 'Starting Camoufox…' });
 
   let emailLookupRotated = false;
-  let throttleRotatesUsed = 0;
-  const MAX_THROTTLE_ROTATES = Number(process.env.LOGIN_MAX_THROTTLE_ROTATES || 2);
 
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
-
-
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
-
-
 
   const result = await loginMicrosoft({
 
@@ -1210,51 +1204,21 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt, meta = {}) => {
+      // Pre-429-force-rotate behavior: at most one IP rotate per login job.
+      if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
       if (reason === 'not_found') return { rotated: false };
-      const isThrottle = reason === 'throttled';
-      if (!isThrottle && emailLookupRotated) return { rotated: false };
-      if (isThrottle && throttleRotatesUsed >= MAX_THROTTLE_ROTATES) {
-        jobLog(id, 'proxy', `429 persists after ${throttleRotatesUsed} IP rotate(s) — cooling down on current IP`);
-        return { rotated: false };
-      }
       const ready =
-        ((reason === 'lookup_failed' || reason === 'throttled') && attempt >= 2) ||
+        (reason === 'lookup_failed' && attempt >= 2) ||
         (reason === 'stuck' && attempt >= 3);
       if (!ready) return { rotated: false };
 
-      const force = isThrottle;
-      jobLog(
-        id,
-        'proxy',
-        force
-          ? 'Microsoft 429 Too Many Requests — forcing IP rotation…'
-          : `Email step blocked (${reason}) — rotating proxy once and retrying…`
-      );
-      const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force }).catch((err) => {
+      emailLookupRotated = true;
+      jobLog(id, 'proxy', `Email step blocked (${reason}) — rotating proxy once and retrying…`);
+      const result = await rotateProxyIp((step, message) => jobLog(id, step, message)).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };
       });
-      if (result?.rotated) {
-        if (isThrottle) throttleRotatesUsed += 1;
-        else emailLookupRotated = true;
-      } else if (result?.reason === 'same_ip') {
-        // Fake rotate burns an attempt — don't loop forever on the same burned IP.
-        if (isThrottle) throttleRotatesUsed += 1;
-        jobLog(
-          id,
-          'proxy',
-          `IP rotate did not change exit IP${result.exitIp ? ` (still ${result.exitIp})` : ''} — Microsoft 429 will continue until changeip works`
-        );
-      } else if (result?.reason === 'recent_rotate') {
-        jobLog(id, 'proxy', 'Reusing IP another login job just rotated — waiting before retry');
-      } else {
-        jobLog(
-          id,
-          'proxy',
-          `IP rotate not completed (${result?.reason || 'unknown'}) — will retry rotate on next attempt`
-        );
-      }
       broadcast('proxy', proxyStatusPayload());
       return result || { rotated: false };
     },
