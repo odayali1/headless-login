@@ -44,7 +44,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive, GCT_429_SETTLE_MS } from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
@@ -1185,77 +1185,60 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
 
-  const result = await loginMicrosoft({
-
+  const loginArgs = {
     email,
-
     password,
-
     target,
-
     engine: resolveEngine(engine),
-
     headless,
-
     jobId: id,
-
     forceFresh,
-
     skipBackupEmail,
-
     backupEmailMode,
-
-    // Only rotate mid-login on proven GetCredentialType HTTP 429 (see job logs gct=429).
-    onEmailRetry: async (reason) => {
-      if (reason !== 'gct429') return;
-      jobLog(id, 'proxy', 'GetCredentialType 429 — forcing one IP rotate + settle…');
-      await rotateProxyIp((step, message) => jobLog(id, step, message), {
-        force: true,
-        allowDuringLogin: true,
-      }).catch(() => {});
-      const settle = Number(process.env.PROXY_POST_ROTATE_SETTLE_MS || 15_000);
-      jobLog(id, 'proxy', `Settling ${Math.round(settle / 1000)}s after 429 rotate…`);
-      await sleep(settle);
-      broadcast('proxy', getProxyStatus());
-    },
-
+    onEmailRetry: async () => {},
     onProgress: ({ step, message, ...extra }) => jobLog(id, step, message),
+  };
 
-  });
-
-
+  let result;
+  try {
+    result = await loginMicrosoft(loginArgs);
+  } catch (err) {
+    // Proven by Coolify logs: gct=429. Soft-reload on same IP always fails; Orbury succeeded only after gct=200.
+    if (err?.code === 'GCT_429' || err?.code === 'GCT_LOOKUP' || /GetCredentialType HTTP 429|issue looking up/i.test(err?.message || '')) {
+      jobLog(id, 'proxy', `${err.code || 'GCT'} — rotating to a clean IP, settling ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one retry (new Camoufox device)…`);
+      await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true, allowDuringLogin: true }).catch(() => {});
+      await sleep(GCT_429_SETTLE_MS);
+      await beforeAccountLogin((step, message) => jobLog(id, step, message));
+      result = await loginMicrosoft({
+        ...loginArgs,
+        forceFresh: true,
+        regenerateFingerprint: true,
+      });
+    } else {
+      throw err;
+    }
+  }
 
   updateJob(id, {
-
     status: result.status,
-
     message: result.message,
-
     result,
-
     finishedAt: new Date().toISOString(),
-
   });
 
-
-
   if (result.status === 'success') {
-
     saveAccountCredentials(email, target, password, 'camoufox');
-
     await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
-
     broadcast('proxy', proxyStatusPayload());
-
     if (result.hasToken) {
       notifyAccountTokenUpdated(email, target, { reason: 'login' }).catch(() => {});
     }
-
   }
 
   broadcastAccounts();
   } finally {
-    endLoginProxyExclusive();
+    const waiting = getQueueStatus().waiting || 0;
+    endLoginProxyExclusive({ queueWaiting: waiting });
   }
 
 }

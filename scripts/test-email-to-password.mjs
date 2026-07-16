@@ -66,6 +66,11 @@ try {
   );
   process.exit(hitPassword || result?.status === 'success' ? 0 : 2);
 } catch (err) {
+  // Navigation can destroy the page during post-password verify — email→password is the proof.
+  if (hitPassword) {
+    console.log(JSON.stringify({ hitPassword: true, note: 'password reached; later nav race ignored', error: err.message }, null, 2));
+    process.exit(0);
+  }
   console.error('FAIL', err.message, { hitPassword });
   process.exit(1);
 } finally {
