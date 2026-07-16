@@ -1232,7 +1232,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     saveAccountCredentials(email, target, password, 'camoufox');
 
-    await afterAccountLoginSuccess();
+    await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
 
     broadcast('proxy', proxyStatusPayload());
 
