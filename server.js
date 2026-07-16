@@ -1169,6 +1169,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
   updateJob(id, { status: 'starting', message: 'Starting Camoufox…' });
 
   let emailLookupRotated = false;
+  let throttleRotatesUsed = 0;
+  const MAX_THROTTLE_ROTATES = Number(process.env.LOGIN_MAX_THROTTLE_ROTATES || 2);
 
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
@@ -1199,17 +1201,20 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt, meta = {}) => {
-      // Only consume the one-rotate budget after a real IP change. Overnight logs marked
-      // emailLookupRotated=true after failed busy-rotates, then soft-reloaded 544× on the same 429 IP.
-      if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
-      if (reason === 'not_found') return { rotated: false }; // real missing account — IP won't help
+      if (reason === 'not_found') return { rotated: false };
+      const isThrottle = reason === 'throttled';
+      if (!isThrottle && emailLookupRotated) return { rotated: false };
+      if (isThrottle && throttleRotatesUsed >= MAX_THROTTLE_ROTATES) {
+        jobLog(id, 'proxy', `429 persists after ${throttleRotatesUsed} IP rotate(s) — cooling down on current IP`);
+        return { rotated: false };
+      }
       const ready =
         ((reason === 'lookup_failed' || reason === 'throttled') && attempt >= 2) ||
         (reason === 'stuck' && attempt >= 3);
       if (!ready) return { rotated: false };
 
-      const force = reason === 'throttled';
+      const force = isThrottle;
       jobLog(
         id,
         'proxy',
@@ -1222,7 +1227,10 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
         return { rotated: false };
       });
       if (result?.rotated) {
-        emailLookupRotated = true;
+        if (isThrottle) throttleRotatesUsed += 1;
+        else emailLookupRotated = true;
+      } else if (result?.reason === 'recent_rotate') {
+        jobLog(id, 'proxy', 'Reusing IP another login job just rotated — waiting before retry');
       } else {
         jobLog(
           id,
