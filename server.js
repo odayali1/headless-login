@@ -19,6 +19,7 @@ import {
   isSmartRefreshEnabled,
   setSmartRefreshEnabled,
   syncSmartRefreshRuntime,
+  waitForSmartRefreshHttpQuiet,
 } from './lib/smart-refresh.js';
 
 import { markProfileFailed, loadProfile, CANONICAL_TARGET, deleteAllProfilesForEmail } from './lib/profile.js';
@@ -43,7 +44,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive } from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
@@ -1178,6 +1179,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
   updateJob(id, { status: 'starting', message: 'Starting Camoufox…' });
 
   try {
+  beginLoginProxyExclusive();
+  await waitForSmartRefreshHttpQuiet((step, message) => jobLog(id, step, message));
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
@@ -1202,17 +1205,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     backupEmailMode,
 
-    // Soft-reload on attempt 2; rotate at most once on attempt 3+ (login closes Camoufox first).
-    onEmailRetry: async (attempt) => {
-      if (attempt < 3) return { rotated: false };
-      jobLog(id, 'proxy', 'Email still blocked after soft reload — rotating proxy once…');
-      const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true }).catch((err) => {
-        jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
-        return { rotated: false };
-      });
-      broadcast('proxy', proxyStatusPayload());
-      return result || { rotated: false };
-    },
+    // Soft-reload only — never rotate IP on email lookup glitches (same IP for many logins).
+    onEmailRetry: async () => ({ rotated: false }),
 
     onProgress: ({ step, message, ...extra }) => jobLog(id, step, message),
 

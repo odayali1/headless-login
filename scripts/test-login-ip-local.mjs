@@ -92,12 +92,7 @@ const result = await loginMicrosoft({
   forceFresh: true,
   jobId: 'local-test',
   onProgress: ({ step, message }) => console.log(`[job:${email}] [${step}] ${message}`),
-  onEmailRetry: async (attempt) => {
-    // Same as fixed server: soft path handled inside login; only rotate late if asked.
-    if (attempt < 3) return { rotated: false };
-    console.log(`[test] Email retry ${attempt} — one force rotate`);
-    return rotateProxyIp(log, { force: true });
-  },
+  onEmailRetry: async () => ({ rotated: false }),
 });
 
 const gctOk = result?.success || result?.status === 'success';
