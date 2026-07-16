@@ -30,6 +30,7 @@ const els = {
   batchGroup: document.getElementById('batchGroup'),
   batchSkipBackupEmail: document.getElementById('batchSkipBackupEmail'),
   reloginSkipBackupEmail: document.getElementById('reloginSkipBackupEmail'),
+  reloginFreshCamoufox: document.getElementById('reloginFreshCamoufox'),
   batchBtn: document.getElementById('batchBtn'),
   jobsList: document.getElementById('jobsList'),
   queueBanner: document.getElementById('queueBanner'),
@@ -275,10 +276,11 @@ function backupLoginBody() {
   return { skipBackupEmail: skip };
 }
 
-/** Row / filtered / group Re-login — dedicated checkbox (default checked). */
+/** Row / filtered / group Re-login options. */
 function reloginBackupBody() {
   const skip = els.reloginSkipBackupEmail?.checked !== false;
-  return { skipBackupEmail: skip };
+  const regenerateFingerprint = els.reloginFreshCamoufox?.checked === true;
+  return { skipBackupEmail: skip, regenerateFingerprint };
 }
 
 function matchesHealthFilter(acc) {
@@ -924,9 +926,10 @@ els.accountsBody.addEventListener('click', async (e) => {
       return alert('No saved password for this account. Log in once from the form above.');
     }
     const loginAs = getLoginAsOverride();
-    const skipBackup = reloginBackupBody().skipBackupEmail;
-    const skipNote = skipBackup ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
-    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password${skipNote}?`)) return;
+    const opts = reloginBackupBody();
+    const skipNote = opts.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
+    const freshNote = opts.regenerateFingerprint ? ' + fresh Camoufox profile' : '';
+    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password${skipNote}${freshNote}?`)) return;
     actionBtn.disabled = true;
     try {
       const res = await fetch(accountApiPath(email, target, 'relogin'), {
@@ -1032,7 +1035,8 @@ async function runGroupAction(action) {
     action === 'relogin' ? reloginBackupBody() : backupLoginBody();
   if (action === 'relogin') {
     const skipNote = backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
-    if (!confirm(`Re-login group "${group}"${loginAsLabel()}${skipNote}?`)) return;
+    const freshNote = backup.regenerateFingerprint ? ' + fresh Camoufox profile' : '';
+    if (!confirm(`Re-login group "${group}"${loginAsLabel()}${skipNote}${freshNote}?`)) return;
   }
   const res = await fetch(`/api/groups/${encodeURIComponent(group)}/action`, {
     method: 'POST',
@@ -1061,9 +1065,9 @@ async function runFilteredAction(action) {
   const backup = action === 'relogin' ? reloginBackupBody() : backupLoginBody();
   const skipNote =
     action === 'relogin'
-      ? backup.skipBackupEmail
-        ? ' (skip backup-email if shown)'
-        : ' (will NOT auto-skip backup-email)'
+      ? `${backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)'}${
+          backup.regenerateFingerprint ? ' + fresh Camoufox profile' : ''
+        }`
       : '';
   if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}${skipNote}?`)) return;
   const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: 'outlook' }));

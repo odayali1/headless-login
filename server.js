@@ -601,9 +601,10 @@ app.post('/api/accounts/:email/:target/refresh-token', async (req, res) => {
 app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
   const { email, target } = req.params;
-  const { skipBackupEmail = true, loginAs } = req.body || {};
+  const { loginAs } = req.body || {};
   const loginVia = resolveLoginVia(loginAs);
   const backupOpts = parseBackupLoginOptions(req.body);
+  const regenerateFingerprint = req.body?.regenerateFingerprint === true;
 
   const stored = getAccountPasswordWithFallback(email, CANONICAL_TARGET);
 
@@ -625,7 +626,11 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
 
   enqueueLogin(() =>
 
-    runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, ...backupOpts }).catch(async (err) => {
+    runJob(id, email, stored, loginVia, 'camoufox', true, {
+      forceFresh: true,
+      regenerateFingerprint,
+      ...backupOpts,
+    }).catch(async (err) => {
 
       await markProfileFailed(email, err.message).catch(() => {});
 
@@ -691,10 +696,15 @@ function parseBackupLoginOptions(body = {}) {
   return { skipBackupEmail: skip, backupEmailMode: skip ? 'skip' : 'block' };
 }
 
-async function queueAccountsAction(action, accounts, { label = 'bulk', skipBackupEmail = true, backupEmailMode = 'skip', loginAs = '' } = {}) {
+async function queueAccountsAction(
+  action,
+  accounts,
+  { label = 'bulk', skipBackupEmail = true, backupEmailMode = 'skip', loginAs = '', regenerateFingerprint = false } = {}
+) {
   const backupOpts = backupEmailMode === 'hub'
     ? { skipBackupEmail: false, backupEmailMode: 'hub' }
     : { skipBackupEmail, backupEmailMode: skipBackupEmail ? 'skip' : 'block' };
+  const reloginOpts = { ...backupOpts, regenerateFingerprint: regenerateFingerprint === true };
   const accepted = [];
   const loginVia = resolveLoginVia(loginAs);
   for (const acc of accounts) {
@@ -734,7 +744,7 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
       const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} re-login queued…`);
       accepted.push({ email, target: CANONICAL_TARGET, loginVia, jobId: id });
       enqueueLogin(() =>
-        runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, ...backupOpts }).catch(async (err) => {
+        runJob(id, email, stored, loginVia, 'camoufox', true, { forceFresh: true, ...reloginOpts }).catch(async (err) => {
           await markProfileFailed(email, err.message).catch(() => {});
           updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
           broadcastAccounts();
@@ -766,7 +776,14 @@ async function queueAccountsAction(action, accounts, { label = 'bulk', skipBacku
 }
 
 app.post('/api/accounts/bulk-action', async (req, res) => {
-  const { action, accounts: list, skipBackupEmail = true, backupEmailMode = '', loginAs = '' } = req.body || {};
+  const {
+    action,
+    accounts: list,
+    skipBackupEmail = true,
+    backupEmailMode = '',
+    loginAs = '',
+    regenerateFingerprint = false,
+  } = req.body || {};
   if (!Array.isArray(list) || list.length === 0) {
     return res.status(400).json({ error: 'accounts array is required.' });
   }
@@ -787,6 +804,7 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
     skipBackupEmail,
     backupEmailMode: String(backupEmailMode || '').trim(),
     loginAs,
+    regenerateFingerprint: regenerateFingerprint === true,
   });
   broadcastAccounts();
   res.json({ ok: true, action, count: accepted.length, accepted });
@@ -794,7 +812,13 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
 
 app.post('/api/groups/:group/action', async (req, res) => {
   const group = String(req.params.group || '').trim();
-  const { action, loginAs = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
+  const {
+    action,
+    loginAs = '',
+    skipBackupEmail = true,
+    backupEmailMode = '',
+    regenerateFingerprint = false,
+  } = req.body || {};
   if (!group) return res.status(400).json({ error: 'Group is required.' });
   if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
     return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
@@ -810,6 +834,7 @@ app.post('/api/groups/:group/action', async (req, res) => {
     skipBackupEmail,
     backupEmailMode: String(backupEmailMode || '').trim(),
     loginAs,
+    regenerateFingerprint: regenerateFingerprint === true,
   });
 
   broadcastAccounts();
@@ -1164,7 +1189,15 @@ app.post('/api/login/batch', async (req, res) => {
 
 
 
-async function runJob(id, email, password, target, engine, headless, { forceFresh = false, skipBackupEmail = true, backupEmailMode = 'skip' } = {}) {
+async function runJob(
+  id,
+  email,
+  password,
+  target,
+  engine,
+  headless,
+  { forceFresh = false, regenerateFingerprint = false, skipBackupEmail = true, backupEmailMode = 'skip' } = {}
+) {
 
   if (isCancelled(id)) return;
 
@@ -1184,6 +1217,9 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
+  if (regenerateFingerprint) {
+    jobLog(id, 'engine', 'Fresh Camoufox profile requested — rebuilding device fingerprint for this login…');
+  }
 
   const loginArgs = {
     email,
@@ -1193,6 +1229,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     headless,
     jobId: id,
     forceFresh,
+    regenerateFingerprint: regenerateFingerprint === true,
     skipBackupEmail,
     backupEmailMode,
     onEmailRetry: async () => {},
