@@ -72,14 +72,13 @@ if (!email || !password) {
   process.exit(1);
 }
 
-console.log('[test] Step 1 — rotate IP (expect ~10s wait)…');
-const t0 = Date.now();
-const rot = await rotateProxyIp(log, { force: true });
-const rotateSec = ((Date.now() - t0) / 1000).toFixed(1);
-console.log(`[test] Rotate result: ${JSON.stringify(rot)} in ${rotateSec}s`);
-if (!rot?.rotated) {
-  console.error('[test] FAIL — rotate did not change IP');
-  process.exit(2);
+console.log('[test] Step 1 — skip rotate (use current IP; set TEST_ROTATE=1 to force)…');
+if (process.env.TEST_ROTATE === '1') {
+  const t0 = Date.now();
+  const rot = await rotateProxyIp(log, { force: true });
+  console.log(`[test] Rotate result: ${JSON.stringify(rot)} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+} else {
+  console.log('[test] Keeping current exit IP (matches production same-IP login)');
 }
 
 console.log('[test] Camoufox login (no smart-refresh, soft email retry — matches fixed production path)…');
