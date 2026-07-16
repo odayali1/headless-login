@@ -1205,8 +1205,19 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     backupEmailMode,
 
-    // Never rotate mid-login — changeip near GetCredentialType causes lookup failures.
-    onEmailRetry: async () => {},
+    // Only rotate mid-login on proven GetCredentialType HTTP 429 (see job logs gct=429).
+    onEmailRetry: async (reason) => {
+      if (reason !== 'gct429') return;
+      jobLog(id, 'proxy', 'GetCredentialType 429 — forcing one IP rotate + settle…');
+      await rotateProxyIp((step, message) => jobLog(id, step, message), {
+        force: true,
+        allowDuringLogin: true,
+      }).catch(() => {});
+      const settle = Number(process.env.PROXY_POST_ROTATE_SETTLE_MS || 15_000);
+      jobLog(id, 'proxy', `Settling ${Math.round(settle / 1000)}s after 429 rotate…`);
+      await sleep(settle);
+      broadcast('proxy', getProxyStatus());
+    },
 
     onProgress: ({ step, message, ...extra }) => jobLog(id, step, message),
 
