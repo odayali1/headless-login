@@ -121,8 +121,17 @@ const loginQueue = createLoginQueue({
 });
 
 const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQueuePaused } = loginQueue;
-if (loginQueue.parallel > 1) {
-  console.log(`[queue] Login parallel: ${loginQueue.parallel} (LOGIN_PARALLEL)`);
+{
+  const raw = process.env.LOGIN_PARALLEL;
+  const requested = raw == null || raw === '' ? 1 : Number(raw);
+  const capped =
+    Number.isFinite(requested) &&
+    Math.trunc(requested) > 1 &&
+    process.env.LOGIN_PARALLEL_FORCE !== '1' &&
+    loginQueue.parallel === 1;
+  console.log(
+    `[queue] Login parallel: ${loginQueue.parallel}${capped ? ' (LOGIN_PARALLEL=2 capped — set LOGIN_PARALLEL_FORCE=1 to allow 2)' : raw ? ` (LOGIN_PARALLEL=${raw})` : ''}`
+  );
 }
 
 
@@ -324,8 +333,8 @@ app.get('/api/smart-refresh', (_req, res) => {
 const smartRefreshRuntime = {
   log: (msg) => console.log(msg),
   onRefreshed: broadcastAccounts,
-  // Smart-refresh Camoufox uses its own parallel pool; queue busy is informational only.
-  isLoginQueueBusy: () => !!getQueueStatus().blocksCamoufox,
+  isLoginQueueBusy: () => getQueueStatus().running > 0,
+  getLoginQueueStatus: () => getQueueStatus(),
   pauseLoginQueue: (paused) => {
     setLoginQueuePaused(!!paused);
     broadcast('queue-status', getQueueStatus());
