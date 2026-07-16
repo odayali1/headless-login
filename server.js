@@ -1183,7 +1183,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
 
 
-  updateJob(id, { status: 'running', message: 'Browser ready ΓÇö logging inΓÇª' });
+  updateJob(id, { status: 'running', message: 'Browser ready ??? logging in???' });
 
 
 
@@ -1209,10 +1209,10 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
 
     onEmailRetry: async (attempt, meta = {}) => {
       // Only consume the one-rotate budget after a real IP change. Overnight logs marked
-      // emailLookupRotated=true after failed busy-rotates, then soft-reloaded 544├ù on the same 429 IP.
+      // emailLookupRotated=true after failed busy-rotates, then soft-reloaded 544?? on the same 429 IP.
       if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
-      if (reason === 'not_found') return { rotated: false }; // real missing account ΓÇö IP won't help
+      if (reason === 'not_found') return { rotated: false }; // real missing account ??? IP won't help
       const ready =
         ((reason === 'lookup_failed' || reason === 'throttled') && attempt >= 2) ||
         (reason === 'stuck' && attempt >= 3);
@@ -1223,8 +1223,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
         id,
         'proxy',
         force
-          ? 'Microsoft 429 Too Many Requests ΓÇö forcing IP rotationΓÇª'
-          : `Email step blocked (${reason}) ΓÇö rotating proxy once and retryingΓÇª`
+          ? 'Microsoft 429 Too Many Requests ??? forcing IP rotation???'
+          : `Email step blocked (${reason}) ??? rotating proxy once and retrying???`
       );
       const result = await rotateProxyIp((step, message) => jobLog(id, step, message), { force }).catch((err) => {
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
@@ -1236,7 +1236,7 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
         jobLog(
           id,
           'proxy',
-          `IP rotate not completed (${result?.reason || 'unknown'}) ΓÇö will retry rotate on next attempt`
+          `IP rotate not completed (${result?.reason || 'unknown'}) ??? will retry rotate on next attempt`
         );
       }
       broadcast('proxy', proxyStatusPayload());
