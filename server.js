@@ -1199,7 +1199,8 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
     backupEmailMode,
 
     onEmailRetry: async (attempt, meta = {}) => {
-      // At most one IP rotate per login job (429 may force-bypass global cooldown).
+      // Only consume the one-rotate budget after a real IP change. Overnight logs marked
+      // emailLookupRotated=true after failed busy-rotates, then soft-reloaded 544× on the same 429 IP.
       if (emailLookupRotated) return { rotated: false };
       const reason = meta.reason || 'stuck';
       if (reason === 'not_found') return { rotated: false }; // real missing account — IP won't help
@@ -1208,7 +1209,6 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
         (reason === 'stuck' && attempt >= 3);
       if (!ready) return { rotated: false };
 
-      emailLookupRotated = true;
       const force = reason === 'throttled';
       jobLog(
         id,
@@ -1221,6 +1221,15 @@ async function runJob(id, email, password, target, engine, headless, { forceFres
         jobLog(id, 'proxy', `Rotation failed: ${err.message}`);
         return { rotated: false };
       });
+      if (result?.rotated) {
+        emailLookupRotated = true;
+      } else {
+        jobLog(
+          id,
+          'proxy',
+          `IP rotate not completed (${result?.reason || 'unknown'}) — will retry rotate on next attempt`
+        );
+      }
       broadcast('proxy', proxyStatusPayload());
       return result || { rotated: false };
     },
