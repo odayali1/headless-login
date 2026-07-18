@@ -13,12 +13,16 @@
         <span class="logo">◈</span>
         <div>
           <h1>Headless Login</h1>
-          <p class="subtitle">Camoufox stealth · Outlook & Teams · mobile proxy</p>
+          <p class="subtitle">Camoufox stealth · Outlook & Teams · proxy</p>
         </div>
       </div>
       <div class="header-controls">
         <a href="/api-docs.html" class="btn ghost header-link">API docs</a>
-        <button type="button" class="status-pill proxy-pill" id="proxyToggle" title="Toggle mobile proxy">
+        <select id="proxyProfile" class="proxy-profile-select" title="Mobile iProxy or residential rotating SOCKS">
+          <option value="mobile">Mobile iProxy</option>
+          <option value="residential">Residential rotating</option>
+        </select>
+        <button type="button" class="status-pill proxy-pill" id="proxyToggle" title="Toggle proxy on/off">
           <span class="dot"></span>
           <span id="proxyLabel">Proxy…</span>
         </button>

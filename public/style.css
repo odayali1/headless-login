@@ -40,6 +40,18 @@ header {
   flex-wrap: wrap;
 }
 
+.proxy-profile-select {
+  appearance: none;
+  background: var(--surface-2, #1a1f2e);
+  color: inherit;
+  border: 1px solid var(--border, #2a3348);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  max-width: 11rem;
+  cursor: pointer;
+}
+
 .header-controls {
   display: flex;
   align-items: center;

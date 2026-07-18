@@ -46,7 +46,19 @@ import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
 import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot } from './lib/proxy.js';
 
-import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
+import {
+  getProxyStatus,
+  setProxyEnabled,
+  getProxyUrl,
+  parseProxyUrl,
+  isIproxyWifiSplitMode,
+  isMobileRelayProxy,
+  isResidentialProxy,
+  getProxyProfile,
+  setProxyProfile,
+  getProxyHttpUrl,
+  getProxyPreferMode,
+} from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 import { closeLocalProxy } from './lib/proxy-local.js';
 
@@ -201,7 +213,33 @@ app.post('/api/proxy/toggle', (req, res) => {
 
 });
 
-
+/** Switch active proxy: mobile (iProxy) <-> residential (rotating SOCKS). */
+app.post('/api/proxy/profile', (req, res) => {
+  const wanted = String(req.body?.profile || '').trim().toLowerCase();
+  if (wanted !== 'mobile' && wanted !== 'residential') {
+    return res.status(400).json({ error: 'profile must be "mobile" or "residential"' });
+  }
+  if (wanted === 'residential') {
+    try {
+      // Throws if PROXY_RESIDENTIAL_URL missing when profile is residential — probe via temp set.
+      setProxyProfile('residential');
+      parseProxyUrl(getProxyUrl());
+    } catch (err) {
+      setProxyProfile('mobile');
+      return res.status(400).json({
+        error:
+          err.message ||
+          'Set PROXY_RESIDENTIAL_URL in Coolify (socks5://user:pass@host:port) before switching.',
+      });
+    }
+  } else {
+    setProxyProfile('mobile');
+  }
+  const status = proxyStatusPayload();
+  console.log(`[proxy] Profile → ${status.profile} (${status.host}:${status.port})`);
+  broadcast('proxy', status);
+  res.json(status);
+});
 
 app.post('/api/proxy/rotate', async (_req, res) => {
 
@@ -1272,52 +1310,59 @@ async function runJob(
   try {
     result = await loginMicrosoft(loginArgs);
   } catch (err) {
-    // Proven: gct=429 is IP/automation soft-limit, not "email not found". Retry only on a verified new IP.
+    // Proven: gct=429 is IP soft-limit. Mobile: verified changeip. Residential: new SOCKS connection.
     if (err?.code === 'GCT_429' || err?.code === 'GCT_LOOKUP' || /GetCredentialType HTTP 429|issue looking up/i.test(err?.message || '')) {
-      const phoneCaused = loginArgs.mimicPhone === true;
-      if (phoneCaused) {
-        jobLog(
-          id,
-          'proxy',
-          `${err.code || 'GCT'} with phone mimic — need verified new IP + desktop Camoufox retry`
-        );
-      } else {
-        jobLog(
-          id,
-          'proxy',
-          `${err.code || 'GCT'} — need verified new IP, settle ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one desktop retry…`
-        );
-      }
-      const rotated = await rotateProxyIp((step, message) => jobLog(id, step, message), {
-        force: true,
-        allowDuringLogin: true,
-      }).catch((rotateErr) => {
-        jobLog(id, 'proxy', `Rotate error: ${rotateErr.message}`);
-        return null;
-      });
-      if (!rotated?.rotated || !rotated?.exitIp) {
-        markGctHot(rotated?.exitIp || null);
-        jobLog(
-          id,
-          'proxy',
-          `Aborting retry — IP did not change (${rotated?.reason || 'rotate_failed'}). Retrying on the same IP only burns more accounts.`
-        );
-        throw err;
-      }
-      jobLog(id, 'proxy', `Verified new exit IP ${rotated.exitIp} — settling before retry…`);
-      await sleep(GCT_429_SETTLE_MS);
-      await beforeAccountLogin((step, message) => jobLog(id, step, message));
-      try {
+      const residential = isResidentialProxy();
+      if (residential) {
+        jobLog(id, 'proxy', `${err.code || 'GCT'} — residential proxy: reconnect relay for a new exit IP, one retry…`);
+        await rotateProxyIp((step, message) => jobLog(id, step, message), {
+          force: true,
+          allowDuringLogin: true,
+        }).catch(() => {});
+        await sleep(3_000);
+        await beforeAccountLogin((step, message) => jobLog(id, step, message));
         result = await loginMicrosoft({
           ...loginArgs,
           forceFresh: true,
           regenerateFingerprint: true,
           mimicPhone: false,
         });
-      } catch (retryErr) {
-        // Recovery IP also failed — cool the phone so the next queued account isn't burned instantly.
-        markGctHot(rotated.exitIp);
-        throw retryErr;
+      } else {
+        jobLog(
+          id,
+          'proxy',
+          `${err.code || 'GCT'} — need verified new mobile IP, settle ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one desktop retry…`
+        );
+        const rotated = await rotateProxyIp((step, message) => jobLog(id, step, message), {
+          force: true,
+          allowDuringLogin: true,
+        }).catch((rotateErr) => {
+          jobLog(id, 'proxy', `Rotate error: ${rotateErr.message}`);
+          return null;
+        });
+        if (!rotated?.rotated || !rotated?.exitIp) {
+          markGctHot(rotated?.exitIp || null);
+          jobLog(
+            id,
+            'proxy',
+            `Aborting retry — IP did not change (${rotated?.reason || 'rotate_failed'}). Retrying on the same IP only burns more accounts.`
+          );
+          throw err;
+        }
+        jobLog(id, 'proxy', `Verified new exit IP ${rotated.exitIp} — settling before retry…`);
+        await sleep(GCT_429_SETTLE_MS);
+        await beforeAccountLogin((step, message) => jobLog(id, step, message));
+        try {
+          result = await loginMicrosoft({
+            ...loginArgs,
+            forceFresh: true,
+            regenerateFingerprint: true,
+            mimicPhone: false,
+          });
+        } catch (retryErr) {
+          markGctHot(rotated.exitIp);
+          throw retryErr;
+        }
       }
     } else {
       throw err;
@@ -1367,8 +1412,11 @@ app.listen(PORT, async () => {
   if (proxy.enabled && proxy.configured) {
     try {
       const p = parseProxyUrl(getProxyUrl());
-      console.log(`Proxy: ON ${p.protocol}://${p.host}:${p.port}`);
-      if (/fxdx\.in|iproxy/i.test(p.host)) {
+      const profile = proxy.profile || getProxyProfile();
+      console.log(`Proxy: ON [${profile}] ${p.protocol}://${p.host}:${p.port}`);
+      if (profile === 'residential') {
+        console.log('[proxy] Residential rotating SOCKS — new exit IP per connection (no mobile changeip)');
+      } else if (/fxdx\.in|iproxy/i.test(p.host)) {
         const prefer = getProxyPreferMode();
         if ((isIproxyWifiSplitMode() || isMobileRelayProxy()) && !getProxyHttpUrl()) {
           console.warn('[proxy] Mobile relay — set PROXY_HTTP_URL=http://host:16857:user:pass on Coolify');

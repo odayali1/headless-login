@@ -19,6 +19,7 @@ const els = {
   obscuraStatus: document.getElementById('obscuraStatus'),
   proxyToggle: document.getElementById('proxyToggle'),
   proxyLabel: document.getElementById('proxyLabel'),
+  proxyProfile: document.getElementById('proxyProfile'),
   singleForm: document.getElementById('singleForm'),
   email: document.getElementById('email'),
   password: document.getElementById('password'),
@@ -225,9 +226,22 @@ function renderProxyPill() {
   if (!els.proxyToggle) return;
   const on = proxyState.enabled;
   els.proxyToggle.className = `status-pill proxy-pill ${on ? 'online' : 'offline'}`;
-  const ipInfo = on && proxyState.host
-    ? `${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
-    : on ? 'Proxy ON' : 'Proxy OFF (direct — not recommended)';
+  const profile = proxyState.profile === 'residential' ? 'Residential' : 'Mobile';
+  if (els.proxyProfile && proxyState.profile) {
+    els.proxyProfile.value = proxyState.profile === 'residential' ? 'residential' : 'mobile';
+  }
+  let ipInfo;
+  if (!on) {
+    ipInfo = 'Proxy OFF (direct — not recommended)';
+  } else if (proxyState.profile === 'residential') {
+    ipInfo = proxyState.host
+      ? `${profile} · ${proxyState.host}:${proxyState.port} · rotates per request`
+      : `${profile} · ON (set PROXY_RESIDENTIAL_URL)`;
+  } else {
+    ipInfo = proxyState.host
+      ? `${profile} · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
+      : `${profile} · ON`;
+  }
   const bw = proxyState.bandwidth;
   const bwInfo = bw?.mbTotal != null ? ` · ${bw.mbTotal} MB proxied` : '';
   els.proxyLabel.textContent = ipInfo + bwInfo;
@@ -248,6 +262,23 @@ els.proxyToggle?.addEventListener('click', async () => {
     body: JSON.stringify({ enabled: next }),
   });
   applyProxyState(await res.json());
+  renderProxyPill();
+});
+
+els.proxyProfile?.addEventListener('change', async () => {
+  const profile = els.proxyProfile.value;
+  const res = await fetch('/api/proxy/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'Could not switch proxy profile');
+    await loadProxy();
+    return;
+  }
+  applyProxyState(data);
   renderProxyPill();
 });
 
