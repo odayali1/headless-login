@@ -49,6 +49,7 @@ import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rot
 import {
   getProxyStatus,
   setProxyEnabled,
+  isProxyEnabled,
   getProxyUrl,
   parseProxyUrl,
   isIproxyWifiSplitMode,
@@ -213,15 +214,19 @@ app.post('/api/proxy/toggle', (req, res) => {
 
 });
 
-/** Switch active proxy: mobile (iProxy) <-> residential (rotating SOCKS). */
-app.post('/api/proxy/profile', (req, res) => {
+/** Switch active proxy: mobile (iProxy) <-> residential (rotating SOCKS). Persists in DB (survives restart). */
+app.post('/api/proxy/profile', async (req, res) => {
   const wanted = String(req.body?.profile || '').trim().toLowerCase();
   if (wanted !== 'mobile' && wanted !== 'residential') {
     return res.status(400).json({ error: 'profile must be "mobile" or "residential"' });
   }
+  if (/^(1|true|yes|on)$/i.test(String(process.env.PROXY_PROFILE_LOCK || '').trim())) {
+    return res.status(400).json({
+      error: 'PROXY_PROFILE_LOCK=1 — remove it from Coolify env to switch from the dashboard.',
+    });
+  }
   if (wanted === 'residential') {
     try {
-      // Throws if PROXY_RESIDENTIAL_URL missing when profile is residential — probe via temp set.
       setProxyProfile('residential');
       parseProxyUrl(getProxyUrl());
     } catch (err) {
@@ -234,6 +239,13 @@ app.post('/api/proxy/profile', (req, res) => {
     }
   } else {
     setProxyProfile('mobile');
+  }
+  try {
+    const { resetProxyMode, closeLocalProxy } = await import('./lib/proxy-local.js');
+    resetProxyMode();
+    await closeLocalProxy().catch(() => {});
+  } catch {
+    // ignore
   }
   const status = proxyStatusPayload();
   console.log(`[proxy] Profile → ${status.profile} (${status.host}:${status.port})`);
@@ -1439,4 +1451,25 @@ app.listen(PORT, async () => {
   else console.log('Camoufox: ready');
   // Drop any stale relay left from a previous crash before first job.
   await closeLocalProxy().catch(() => {});
+
+  // If Coolify left us on broken residential SOCKS, fall back to mobile so refresh works.
+  if (getProxyProfile() === 'residential' && isProxyEnabled()) {
+    try {
+      const { probeExitIp } = await import('./lib/proxy-exit-ip.js');
+      const exitIp = await probeExitIp().catch(() => null);
+      if (!exitIp) {
+        setProxyProfile('mobile');
+        console.warn(
+          '[proxy] Residential SOCKS unreachable at boot — switched to Mobile iProxy. Fix PROXY_RESIDENTIAL_URL, then switch back in the dashboard.'
+        );
+        broadcast('proxy', proxyStatusPayload());
+      } else {
+        console.log(`[proxy] Residential SOCKS OK at boot — exit ${exitIp}`);
+      }
+    } catch (err) {
+      setProxyProfile('mobile');
+      console.warn(`[proxy] Residential check failed — switched to Mobile iProxy (${err.message || err})`);
+      broadcast('proxy', proxyStatusPayload());
+    }
+  }
 });
