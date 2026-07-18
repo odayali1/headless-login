@@ -59,14 +59,26 @@ header {
   flex-wrap: wrap;
 }
 
-.proxy-pill {
+.proxy-pill,
+.hybrid-pill {
   cursor: pointer;
   border: none;
   font: inherit;
 }
 
-.proxy-pill:hover {
+.proxy-pill:hover,
+.hybrid-pill:hover {
   filter: brightness(1.1);
+}
+
+.hybrid-pill {
+  max-width: 16rem;
+}
+
+.hybrid-pill #hybridLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-link {

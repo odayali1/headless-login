@@ -20,6 +20,8 @@ const els = {
   proxyToggle: document.getElementById('proxyToggle'),
   proxyLabel: document.getElementById('proxyLabel'),
   proxyProfile: document.getElementById('proxyProfile'),
+  hybridToggle: document.getElementById('hybridToggle'),
+  hybridLabel: document.getElementById('hybridLabel'),
   singleForm: document.getElementById('singleForm'),
   email: document.getElementById('email'),
   password: document.getElementById('password'),
@@ -225,14 +227,29 @@ function applyProxyState(next) {
 function renderProxyPill() {
   if (!els.proxyToggle) return;
   const on = proxyState.enabled;
+  const hybrid = !!proxyState.hybrid;
   els.proxyToggle.className = `status-pill proxy-pill ${on ? 'online' : 'offline'}`;
-  const profile = proxyState.profile === 'residential' ? 'Residential' : 'Mobile';
-  if (els.proxyProfile && proxyState.profile) {
-    els.proxyProfile.value = proxyState.profile === 'residential' ? 'residential' : 'mobile';
+  if (els.hybridToggle) {
+    els.hybridToggle.className = `status-pill hybrid-pill ${hybrid ? 'online' : 'offline'}`;
+    const resHost = proxyState.residentialHost
+      ? `${proxyState.residentialHost}:${proxyState.residentialPort || ''}`
+      : 'residential';
+    els.hybridLabel.textContent = hybrid ? `Hybrid ON · Loki→${resHost}` : 'Hybrid OFF';
   }
+  if (els.proxyProfile) {
+    els.proxyProfile.disabled = hybrid;
+    if (proxyState.profile) {
+      els.proxyProfile.value = proxyState.profile === 'residential' ? 'residential' : 'mobile';
+    }
+  }
+  const profile = proxyState.profile === 'residential' ? 'Residential' : 'Mobile';
   let ipInfo;
   if (!on) {
     ipInfo = 'Proxy OFF (direct — not recommended)';
+  } else if (hybrid) {
+    ipInfo = proxyState.host
+      ? `Mobile login · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
+      : 'Mobile login · ON';
   } else if (proxyState.profile === 'residential') {
     ipInfo = proxyState.host
       ? `${profile} · ${proxyState.host}:${proxyState.port} · rotates per request`
@@ -275,6 +292,23 @@ els.proxyProfile?.addEventListener('change', async () => {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     alert(data.error || 'Could not switch proxy profile');
+    await loadProxy();
+    return;
+  }
+  applyProxyState(data);
+  renderProxyPill();
+});
+
+els.hybridToggle?.addEventListener('click', async () => {
+  const next = !proxyState.hybrid;
+  const res = await fetch('/api/proxy/hybrid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: next }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    alert(data.error || 'Could not toggle hybrid proxy');
     await loadProxy();
     return;
   }

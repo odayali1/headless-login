@@ -57,6 +57,9 @@ import {
   isResidentialProxy,
   getProxyProfile,
   setProxyProfile,
+  isHybridProxyEnabled,
+  setHybridProxyEnabled,
+  getResidentialProxyUrl,
   getProxyHttpUrl,
   getProxyPreferMode,
 } from './lib/settings.js';
@@ -226,6 +229,8 @@ app.post('/api/proxy/profile', async (req, res) => {
     });
   }
   if (wanted === 'residential') {
+    // Full residential profile is mutually exclusive with hybrid (hybrid already uses residential for HTTP).
+    if (isHybridProxyEnabled()) setHybridProxyEnabled(false);
     try {
       setProxyProfile('residential');
       parseProxyUrl(getProxyUrl());
@@ -249,6 +254,36 @@ app.post('/api/proxy/profile', async (req, res) => {
   }
   const status = proxyStatusPayload();
   console.log(`[proxy] Profile → ${status.profile} (${status.host}:${status.port})`);
+  broadcast('proxy', status);
+  res.json(status);
+});
+
+/**
+ * Hybrid: Loki/MSAL refresh via built-in residential IPv6 SOCKS;
+ * login + Camoufox + cookie SSO stay on mobile (login.live.com).
+ */
+app.post('/api/proxy/hybrid', async (req, res) => {
+  const enabled = req.body?.enabled !== false && req.body?.enabled !== 'false';
+  if (enabled) {
+    try {
+      parseProxyUrl(getResidentialProxyUrl());
+    } catch (err) {
+      return res.status(400).json({ error: err.message || 'Residential SOCKS URL invalid' });
+    }
+    setProxyProfile('mobile');
+  }
+  setHybridProxyEnabled(enabled);
+  try {
+    const { resetProxyMode, closeLocalProxy, closeResidentialRelay } = await import('./lib/proxy-local.js');
+    resetProxyMode();
+    await Promise.all([closeLocalProxy().catch(() => {}), closeResidentialRelay().catch(() => {})]);
+  } catch {
+    // ignore
+  }
+  const status = proxyStatusPayload();
+  console.log(
+    `[proxy] Hybrid → ${status.hybrid ? 'ON' : 'OFF'} (login/Camoufox=mobile, Loki HTTP=${status.hybrid ? 'residential' : status.profile})`
+  );
   broadcast('proxy', status);
   res.json(status);
 });
