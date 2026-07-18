@@ -605,6 +605,7 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
   const loginVia = resolveLoginVia(loginAs);
   const backupOpts = parseBackupLoginOptions(req.body);
   const regenerateFingerprint = req.body?.regenerateFingerprint === true;
+  const mimicPhone = parseMimicPhoneOption(req.body);
 
   const stored = getAccountPasswordWithFallback(email, CANONICAL_TARGET);
 
@@ -629,6 +630,7 @@ app.post('/api/accounts/:email/:target/relogin', async (req, res) => {
     runJob(id, email, stored, loginVia, 'camoufox', true, {
       forceFresh: true,
       regenerateFingerprint,
+      mimicPhone,
       ...backupOpts,
     }).catch(async (err) => {
 
@@ -696,15 +698,26 @@ function parseBackupLoginOptions(body = {}) {
   return { skipBackupEmail: skip, backupEmailMode: skip ? 'skip' : 'block' };
 }
 
+/** true/false when client sets mimicPhone; undefined keeps the account's saved mode. */
+function parseMimicPhoneOption(body = {}) {
+  if (body?.mimicPhone === true) return true;
+  if (body?.mimicPhone === false) return false;
+  return undefined;
+}
+
 async function queueAccountsAction(
   action,
   accounts,
-  { label = 'bulk', skipBackupEmail = true, backupEmailMode = 'skip', loginAs = '', regenerateFingerprint = false } = {}
+  { label = 'bulk', skipBackupEmail = true, backupEmailMode = 'skip', loginAs = '', regenerateFingerprint = false, mimicPhone } = {}
 ) {
   const backupOpts = backupEmailMode === 'hub'
     ? { skipBackupEmail: false, backupEmailMode: 'hub' }
     : { skipBackupEmail, backupEmailMode: skipBackupEmail ? 'skip' : 'block' };
-  const reloginOpts = { ...backupOpts, regenerateFingerprint: regenerateFingerprint === true };
+  const reloginOpts = {
+    ...backupOpts,
+    regenerateFingerprint: regenerateFingerprint === true,
+    ...(typeof mimicPhone === 'boolean' ? { mimicPhone } : {}),
+  };
   const accepted = [];
   const loginVia = resolveLoginVia(loginAs);
   for (const acc of accounts) {
@@ -784,6 +797,7 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
     loginAs = '',
     regenerateFingerprint = false,
   } = req.body || {};
+  const mimicPhone = parseMimicPhoneOption(req.body);
   if (!Array.isArray(list) || list.length === 0) {
     return res.status(400).json({ error: 'accounts array is required.' });
   }
@@ -805,6 +819,7 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
     backupEmailMode: String(backupEmailMode || '').trim(),
     loginAs,
     regenerateFingerprint: regenerateFingerprint === true,
+    mimicPhone,
   });
   broadcastAccounts();
   res.json({ ok: true, action, count: accepted.length, accepted });
@@ -819,6 +834,7 @@ app.post('/api/groups/:group/action', async (req, res) => {
     backupEmailMode = '',
     regenerateFingerprint = false,
   } = req.body || {};
+  const mimicPhone = parseMimicPhoneOption(req.body);
   if (!group) return res.status(400).json({ error: 'Group is required.' });
   if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
     return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
@@ -835,6 +851,7 @@ app.post('/api/groups/:group/action', async (req, res) => {
     backupEmailMode: String(backupEmailMode || '').trim(),
     loginAs,
     regenerateFingerprint: regenerateFingerprint === true,
+    mimicPhone,
   });
 
   broadcastAccounts();
@@ -993,6 +1010,7 @@ app.post('/api/login', async (req, res) => {
 
   const { email, password, target = 'outlook', headless = true, group = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
   const backupOpts = parseBackupLoginOptions(req.body);
+  const mimicPhone = parseMimicPhoneOption(req.body);
 
 
 
@@ -1049,7 +1067,10 @@ app.post('/api/login', async (req, res) => {
 
   enqueueLogin(() =>
 
-    runJob(id, email.trim(), password, loginVia, 'camoufox', headless, backupOpts).catch(async (err) => {
+    runJob(id, email.trim(), password, loginVia, 'camoufox', headless, {
+      ...backupOpts,
+      ...(typeof mimicPhone === 'boolean' ? { mimicPhone } : {}),
+    }).catch(async (err) => {
 
       await markProfileFailed(email.trim(), err.message).catch(() => {});
 
@@ -1069,6 +1090,7 @@ app.post('/api/login/batch', async (req, res) => {
 
   const { accounts = [], target = 'outlook', headless = true, group = '', skipBackupEmail = true, backupEmailMode = '' } = req.body || {};
   const backupOpts = parseBackupLoginOptions(req.body);
+  const mimicPhone = parseMimicPhoneOption(req.body);
   const loginVia = target;
   const groupName = String(group || '').trim();
 
@@ -1169,7 +1191,10 @@ app.post('/api/login/batch', async (req, res) => {
 
       try {
 
-        await runJob(id, acc.email.trim(), acc.password, loginVia, 'camoufox', headless, backupOpts);
+        await runJob(id, acc.email.trim(), acc.password, loginVia, 'camoufox', headless, {
+          ...backupOpts,
+          ...(typeof mimicPhone === 'boolean' ? { mimicPhone } : {}),
+        });
 
       } catch (err) {
 
@@ -1196,7 +1221,7 @@ async function runJob(
   target,
   engine,
   headless,
-  { forceFresh = false, regenerateFingerprint = false, skipBackupEmail = true, backupEmailMode = 'skip' } = {}
+  { forceFresh = false, regenerateFingerprint = false, mimicPhone, skipBackupEmail = true, backupEmailMode = 'skip' } = {}
 ) {
 
   if (isCancelled(id)) return;
@@ -1220,6 +1245,11 @@ async function runJob(
   if (regenerateFingerprint) {
     jobLog(id, 'engine', 'Fresh Camoufox profile requested — rebuilding device fingerprint for this login…');
   }
+  if (mimicPhone === true) {
+    jobLog(id, 'engine', 'Phone mimic requested — unique mobile-sized Camoufox fingerprint for this account…');
+  } else if (mimicPhone === false) {
+    jobLog(id, 'engine', 'Desktop Camoufox fingerprint requested for this login…');
+  }
 
   const loginArgs = {
     email,
@@ -1230,6 +1260,7 @@ async function runJob(
     jobId: id,
     forceFresh,
     regenerateFingerprint: regenerateFingerprint === true,
+    ...(typeof mimicPhone === 'boolean' ? { mimicPhone } : {}),
     skipBackupEmail,
     backupEmailMode,
     onEmailRetry: async () => {},

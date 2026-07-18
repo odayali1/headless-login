@@ -29,8 +29,11 @@ const els = {
   batchTarget: document.getElementById('batchTarget'),
   batchGroup: document.getElementById('batchGroup'),
   batchSkipBackupEmail: document.getElementById('batchSkipBackupEmail'),
+  singleMimicPhone: document.getElementById('singleMimicPhone'),
+  batchMimicPhone: document.getElementById('batchMimicPhone'),
   reloginSkipBackupEmail: document.getElementById('reloginSkipBackupEmail'),
   reloginFreshCamoufox: document.getElementById('reloginFreshCamoufox'),
+  reloginMimicPhone: document.getElementById('reloginMimicPhone'),
   batchBtn: document.getElementById('batchBtn'),
   jobsList: document.getElementById('jobsList'),
   queueBanner: document.getElementById('queueBanner'),
@@ -273,14 +276,20 @@ async function checkHealth() {
 /** Batch paste login — uses the batch checkbox. */
 function backupLoginBody() {
   const skip = els.batchSkipBackupEmail?.checked !== false;
-  return { skipBackupEmail: skip };
+  const mimicPhone = els.batchMimicPhone?.checked === true;
+  return { skipBackupEmail: skip, mimicPhone };
 }
 
 /** Row / filtered / group Re-login options. */
 function reloginBackupBody() {
   const skip = els.reloginSkipBackupEmail?.checked !== false;
   const regenerateFingerprint = els.reloginFreshCamoufox?.checked === true;
-  return { skipBackupEmail: skip, regenerateFingerprint };
+  const mimicPhoneChecked = els.reloginMimicPhone?.checked === true;
+  const body = { skipBackupEmail: skip, regenerateFingerprint };
+  // Checked → enable phone mode. Fresh + unchecked → reset to desktop. Else keep saved mode.
+  if (mimicPhoneChecked) body.mimicPhone = true;
+  else if (regenerateFingerprint) body.mimicPhone = false;
+  return body;
 }
 
 function matchesHealthFilter(acc) {
@@ -929,7 +938,8 @@ els.accountsBody.addEventListener('click', async (e) => {
     const opts = reloginBackupBody();
     const skipNote = opts.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
     const freshNote = opts.regenerateFingerprint ? ' + fresh Camoufox profile' : '';
-    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password${skipNote}${freshNote}?`)) return;
+    const phoneNote = opts.mimicPhone === true ? ' + phone mimic' : opts.mimicPhone === false ? ' + desktop fingerprint' : '';
+    if (!confirm(`Re-login ${email}${loginAsLabel() || ` (${target})`} using saved password${skipNote}${freshNote}${phoneNote}?`)) return;
     actionBtn.disabled = true;
     try {
       const res = await fetch(accountApiPath(email, target, 'relogin'), {
@@ -1036,7 +1046,8 @@ async function runGroupAction(action) {
   if (action === 'relogin') {
     const skipNote = backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
     const freshNote = backup.regenerateFingerprint ? ' + fresh Camoufox profile' : '';
-    if (!confirm(`Re-login group "${group}"${loginAsLabel()}${skipNote}${freshNote}?`)) return;
+    const phoneNote = backup.mimicPhone === true ? ' + phone mimic' : backup.mimicPhone === false ? ' + desktop fingerprint' : '';
+    if (!confirm(`Re-login group "${group}"${loginAsLabel()}${skipNote}${freshNote}${phoneNote}?`)) return;
   }
   const res = await fetch(`/api/groups/${encodeURIComponent(group)}/action`, {
     method: 'POST',
@@ -1067,7 +1078,7 @@ async function runFilteredAction(action) {
     action === 'relogin'
       ? `${backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)'}${
           backup.regenerateFingerprint ? ' + fresh Camoufox profile' : ''
-        }`
+        }${backup.mimicPhone === true ? ' + phone mimic' : backup.mimicPhone === false ? ' + desktop fingerprint' : ''}`
       : '';
   if (!confirm(`${verb} ${count} account(s) matching the current filter${loginAsLabel()}${skipNote}?`)) return;
   const list = (action === 'relogin' ? withPassword : selected).map((a) => ({ email: a.email, target: 'outlook' }));
@@ -1109,6 +1120,7 @@ els.singleForm.addEventListener('submit', async (e) => {
         password: els.password.value,
         target: els.target.value,
         group: els.singleGroup?.value || '',
+        mimicPhone: els.singleMimicPhone?.checked === true,
       }),
     });
     const data = await res.json();

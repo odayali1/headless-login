@@ -52,6 +52,10 @@
             Group (optional)
             <input type="text" id="singleGroup" placeholder="e.g. client-x, warmup, risky" />
           </label>
+          <label class="checkbox-row">
+            <input type="checkbox" id="singleMimicPhone" />
+            Mimic phone browser (unique mobile-sized Camoufox fingerprint)
+          </label>
           <button type="submit" class="btn primary" id="loginBtn">Login headless</button>
         </form>
       </section>
@@ -77,6 +81,10 @@
         <label class="checkbox-row">
           <input type="checkbox" id="batchSkipBackupEmail" checked />
           Skip backup-email prompt when Microsoft shows a skip button
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="batchMimicPhone" />
+          Mimic phone browser (each account gets its own mobile-sized fingerprint)
         </label>
         <p class="hint">Sequential login only (one account at a time). IP rotates every <strong>10 accounts</strong> when proxy is ON.</p>
         <div class="batch-actions">
@@ -184,7 +192,11 @@
           <input type="checkbox" id="reloginFreshCamoufox" />
           Re-login with fresh Camoufox session/profile (new device fingerprint)
         </label>
-        <p class="hint">One account per email (API always <code>target: outlook</code>). <strong>Login via Teams</strong> still saves the same LiveProfileCard token. <strong>Never logged in</strong> = batch stopped before login ran. The checkboxes above apply to row / filtered / group <strong>Re-login</strong> (batch paste has its own skip option).</p>
+        <label class="checkbox-row relogin-skip-row">
+          <input type="checkbox" id="reloginMimicPhone" />
+          Mimic phone browser on Re-login (unique mobile-sized fingerprint; pairs with fresh profile when switching)
+        </label>
+        <p class="hint">One account per email (API always <code>target: outlook</code>). <strong>Login via Teams</strong> still saves the same LiveProfileCard token. <strong>Never logged in</strong> = batch stopped before login ran. The checkboxes above apply to row / filtered / group <strong>Re-login</strong> (batch paste has its own skip option). Phone mimic uses Camoufox mobile window + touch — not Android OS (Camoufox is desktop Firefox only).</p>
         <div class="accounts-table-wrap">
           <table class="accounts-table" id="accountsTable">
             <thead>
