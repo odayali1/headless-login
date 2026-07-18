@@ -1390,7 +1390,12 @@ async function runJob(
 
   if (result.status === 'success') {
     saveAccountCredentials(email, target, password, 'camoufox');
-    await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
+    // Rotate must never flip a successful login+token into "failed".
+    try {
+      await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
+    } catch (err) {
+      jobLog(id, 'proxy', `Post-login rotate skipped: ${err?.message || err}`);
+    }
     broadcast('proxy', proxyStatusPayload());
     if (result.hasToken) {
       notifyAccountTokenUpdated(email, target, { reason: 'login' }).catch(() => {});
