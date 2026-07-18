@@ -1284,17 +1284,7 @@ async function runJob(
       } else {
         jobLog(id, 'proxy', `${err.code || 'GCT'} — rotating to a clean IP, settling ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one retry (new Camoufox device)…`);
       }
-      const rot = await rotateProxyIp((step, message) => jobLog(id, step, message), {
-        force: true,
-        allowDuringLogin: true,
-      }).catch(() => null);
-      if (rot?.skipped && rot?.recent) {
-        jobLog(
-          id,
-          'proxy',
-          'IP already rotated recently — settling without another airplane cycle, then one desktop retry…'
-        );
-      }
+      await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true, allowDuringLogin: true }).catch(() => {});
       await sleep(GCT_429_SETTLE_MS);
       await beforeAccountLogin((step, message) => jobLog(id, step, message));
       result = await loginMicrosoft({
