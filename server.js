@@ -1273,7 +1273,17 @@ async function runJob(
   } catch (err) {
     // Proven by Coolify logs: gct=429. Soft-reload on same IP always fails; Orbury succeeded only after gct=200.
     if (err?.code === 'GCT_429' || err?.code === 'GCT_LOOKUP' || /GetCredentialType HTTP 429|issue looking up/i.test(err?.message || '')) {
-      jobLog(id, 'proxy', `${err.code || 'GCT'} — rotating to a clean IP, settling ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one retry (new Camoufox device)…`);
+      // Phone-sized Camoufox trips GetCredentialType more often — recover on desktop like pre-phone-mimic.
+      const phoneCaused = loginArgs.mimicPhone === true;
+      if (phoneCaused) {
+        jobLog(
+          id,
+          'proxy',
+          `${err.code || 'GCT'} with phone mimic — rotating once, then retrying as desktop Camoufox (stops rotate loop)`
+        );
+      } else {
+        jobLog(id, 'proxy', `${err.code || 'GCT'} — rotating to a clean IP, settling ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one retry (new Camoufox device)…`);
+      }
       await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true, allowDuringLogin: true }).catch(() => {});
       await sleep(GCT_429_SETTLE_MS);
       await beforeAccountLogin((step, message) => jobLog(id, step, message));
@@ -1281,6 +1291,8 @@ async function runJob(
         ...loginArgs,
         forceFresh: true,
         regenerateFingerprint: true,
+        // Always leave phone mode on the recovery attempt so we don't 429→rotate again.
+        mimicPhone: false,
       });
     } else {
       throw err;
