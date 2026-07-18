@@ -44,7 +44,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive, GCT_429_SETTLE_MS } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot } from './lib/proxy.js';
 
 import { getProxyStatus, setProxyEnabled, getProxyUrl, parseProxyUrl, isIproxyWifiSplitMode, isMobileRelayProxy, getProxyHttpUrl, getProxyPreferMode } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
@@ -1272,29 +1272,53 @@ async function runJob(
   try {
     result = await loginMicrosoft(loginArgs);
   } catch (err) {
-    // Proven by Coolify logs: gct=429. Soft-reload on same IP always fails; Orbury succeeded only after gct=200.
+    // Proven: gct=429 is IP/automation soft-limit, not "email not found". Retry only on a verified new IP.
     if (err?.code === 'GCT_429' || err?.code === 'GCT_LOOKUP' || /GetCredentialType HTTP 429|issue looking up/i.test(err?.message || '')) {
-      // Phone-sized Camoufox trips GetCredentialType more often — recover on desktop like pre-phone-mimic.
       const phoneCaused = loginArgs.mimicPhone === true;
       if (phoneCaused) {
         jobLog(
           id,
           'proxy',
-          `${err.code || 'GCT'} with phone mimic — rotating once, then retrying as desktop Camoufox (stops rotate loop)`
+          `${err.code || 'GCT'} with phone mimic — need verified new IP + desktop Camoufox retry`
         );
       } else {
-        jobLog(id, 'proxy', `${err.code || 'GCT'} — rotating to a clean IP, settling ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one retry (new Camoufox device)…`);
+        jobLog(
+          id,
+          'proxy',
+          `${err.code || 'GCT'} — need verified new IP, settle ${Math.round(GCT_429_SETTLE_MS / 1000)}s, one desktop retry…`
+        );
       }
-      await rotateProxyIp((step, message) => jobLog(id, step, message), { force: true, allowDuringLogin: true }).catch(() => {});
+      const rotated = await rotateProxyIp((step, message) => jobLog(id, step, message), {
+        force: true,
+        allowDuringLogin: true,
+      }).catch((rotateErr) => {
+        jobLog(id, 'proxy', `Rotate error: ${rotateErr.message}`);
+        return null;
+      });
+      if (!rotated?.rotated || !rotated?.exitIp) {
+        markGctHot(rotated?.exitIp || null);
+        jobLog(
+          id,
+          'proxy',
+          `Aborting retry — IP did not change (${rotated?.reason || 'rotate_failed'}). Retrying on the same IP only burns more accounts.`
+        );
+        throw err;
+      }
+      jobLog(id, 'proxy', `Verified new exit IP ${rotated.exitIp} — settling before retry…`);
       await sleep(GCT_429_SETTLE_MS);
       await beforeAccountLogin((step, message) => jobLog(id, step, message));
-      result = await loginMicrosoft({
-        ...loginArgs,
-        forceFresh: true,
-        regenerateFingerprint: true,
-        // Always leave phone mode on the recovery attempt so we don't 429→rotate again.
-        mimicPhone: false,
-      });
+      try {
+        result = await loginMicrosoft({
+          ...loginArgs,
+          forceFresh: true,
+          regenerateFingerprint: true,
+          mimicPhone: false,
+        });
+      } catch (retryErr) {
+        // Recovery IP also failed — cool the phone so the next queued account isn't burned instantly.
+        markGctHot(rotated.exitIp);
+        throw retryErr;
+      }
     } else {
       throw err;
     }
