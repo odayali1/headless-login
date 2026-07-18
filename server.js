@@ -1238,7 +1238,8 @@ async function runJob(
 
   try {
   beginLoginProxyExclusive();
-  await waitForSmartRefreshHttpQuiet((step, message) => jobLog(id, step, message));
+  // Short drain only — smart-refresh keeps Loki alive during login; full quiet is around GetCredentialType.
+  await waitForSmartRefreshHttpQuiet((step, message) => jobLog(id, step, message), 20_000);
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
   updateJob(id, { status: 'running', message: 'Browser ready — logging in…' });
