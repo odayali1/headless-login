@@ -1423,6 +1423,14 @@ async function runJob(
     broadcast('proxy', proxyStatusPayload());
     if (result.hasToken) {
       notifyAccountTokenUpdated(email, target, { reason: 'login' }).catch(() => {});
+    } else {
+      // Same recovery as before: session saved → Refresh/cookie SSO (ee51e8e), not another full re-login.
+      const queued = queueRefreshJob(email, target);
+      if (queued?.id) {
+        jobLog(id, 'token', `No token at login — queued Refresh (${queued.id}) for cookie SSO…`);
+      } else {
+        jobLog(id, 'token', 'No token at login — session saved; use Refresh or wait for smart-refresh.');
+      }
     }
   }
 
