@@ -814,25 +814,14 @@ async function queueAccountsAction(
       continue;
     }
     if (action === 'refresh') {
-      const id = createJob(email, CANONICAL_TARGET, 'camoufox', `${label} refresh queued…`);
-      accepted.push({ email, target: CANONICAL_TARGET, jobId: id });
-      enqueueLogin(async () => {
-        if (isCancelled(id)) return;
-        try {
-          updateJob(id, { status: 'running', message: 'Refreshing LiveProfileCard token…' });
-          await beforeAccountRefresh((step, message) => jobLog(id, step, message));
-          const result = await refreshAccountToken(email, CANONICAL_TARGET, {
-            engine: 'camoufox',
-            jobId: id,
-            onProgress: ({ step, message }) => jobLog(id, step, message),
-          });
-          updateJob(id, { status: 'success', message: 'Token refreshed', result, finishedAt: new Date().toISOString() });
-          broadcastAccounts();
-        } catch (err) {
-          updateJob(id, { status: 'failed', message: err.message, finishedAt: new Date().toISOString() });
-          broadcastAccounts();
-        }
-      }, { jobId: id, label: `${email} ${label} refresh` });
+      // Never enqueue refresh on the login queue — that made login sit behind bulk refresh.
+      const queued = queueRefreshJob(email, CANONICAL_TARGET);
+      accepted.push({
+        email,
+        target: CANONICAL_TARGET,
+        jobId: queued.id,
+        duplicate: !!queued.duplicate,
+      });
       continue;
     }
 
