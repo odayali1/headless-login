@@ -44,7 +44,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, beginLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot } from './lib/proxy.js';
 
 import {
   getProxyStatus,
@@ -1322,8 +1322,8 @@ async function runJob(
   updateJob(id, { status: 'starting', message: 'Starting Camoufox…' });
 
   try {
-  beginLoginProxyExclusive();
-  // Short drain only — smart-refresh keeps Loki alive during login; full quiet is around GetCredentialType.
+  // Hybrid: waitForSmartRefreshHttpQuiet is a no-op (residential Loki must not stall login).
+  // Exclusive starts inside beforeAccountLogin — caps mobile cookie SSO so Camoufox can launch.
   await waitForSmartRefreshHttpQuiet((step, message) => jobLog(id, step, message), 20_000);
   await beforeAccountLogin((step, message) => jobLog(id, step, message));
 
