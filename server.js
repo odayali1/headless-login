@@ -1414,11 +1414,15 @@ async function runJob(
 
   if (result.status === 'success') {
     saveAccountCredentials(email, target, password, 'camoufox');
-    // Rotate must never flip a successful login+token into "failed".
-    try {
-      await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
-    } catch (err) {
-      jobLog(id, 'proxy', `Post-login rotate skipped: ${err?.message || err}`);
+    // Only count real sessions toward PROXY_ROTATE_EVERY — never fake "Signed in" without token/session.
+    if (result.hasToken || result.cookieCount >= 5) {
+      try {
+        await afterAccountLoginSuccess((step, message) => jobLog(id, step, message));
+      } catch (err) {
+        jobLog(id, 'proxy', `Post-login rotate skipped: ${err?.message || err}`);
+      }
+    } else {
+      jobLog(id, 'proxy', 'Skipping login IP counter — success without token/session cookies');
     }
     broadcast('proxy', proxyStatusPayload());
     if (result.hasToken) {
