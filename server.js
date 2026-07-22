@@ -1405,46 +1405,21 @@ async function runJob(
     }
   }
 
-  // Password blocked / Too Many Requests: failures never bump PROXY_ROTATE_EVERY (0/4 forever).
-  // Rotate now + one retry so the batch does not keep burning the same exit.
+  // Password blocked / Too Many Requests: failures never bump PROXY_ROTATE_EVERY.
+  // Rotate for the *next* account only — do NOT retry the same email on a new IP.
+  // Immediate same-account retry + new fingerprint is how Microsoft links attempts.
   if (isLoginIpSoftBlock(result)) {
     jobLog(
       id,
       'proxy',
-      `IP soft-block (${result.code || 'soft_block'}) — rotating before retry / next account…`
+      `IP soft-block (${result.code || 'soft_block'}) — rotating for next account (no same-email retry)`
     );
-    const rotated = await afterLoginIpSoftBlock((step, message) => jobLog(id, step, message), {
+    await afterLoginIpSoftBlock((step, message) => jobLog(id, step, message), {
       reason: result.code || 'soft_block',
     }).catch((err) => {
       jobLog(id, 'proxy', `Soft-block rotate error: ${err?.message || err}`);
       return null;
     });
-    if (rotated?.rotated) {
-      jobLog(id, 'proxy', `Retrying login once on new exit ${rotated.exitIp}…`);
-      await beforeAccountLogin((step, message) => jobLog(id, step, message));
-      try {
-        result = await loginMicrosoft({
-          ...loginArgs,
-          forceFresh: true,
-          regenerateFingerprint: true,
-          mimicPhone: false,
-        });
-      } catch (retryErr) {
-        // Still soft-blocked or other throw — leave as failure after rotate already done.
-        if (retryErr?.code === 'GCT_429' || retryErr?.code === 'GCT_LOOKUP') {
-          markGctHot(rotated.exitIp);
-        }
-        throw retryErr;
-      }
-      if (isLoginIpSoftBlock(result)) {
-        jobLog(
-          id,
-          'proxy',
-          `Retry still soft-blocked (${result.code || 'soft_block'}) — marking IP hot for next account`
-        );
-        markGctHot(rotated.exitIp);
-      }
-    }
   }
 
   updateJob(id, {
