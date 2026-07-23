@@ -255,7 +255,7 @@ app.post('/api/proxy/profile', async (req, res) => {
 app.post('/api/proxy/preset', async (req, res) => {
   const id = String(req.body?.id || '').trim();
   if (!id) {
-    return res.status(400).json({ error: 'id is required (huawei-old | samsung-new | residential-ipv4)' });
+    return res.status(400).json({ error: 'id is required (huawei-old | samsung-new | residential-ipv4 | residential-ipv4-rotating)' });
   }
   if (/^(1|true|yes|on)$/i.test(String(process.env.PROXY_PROFILE_LOCK || '').trim())) {
     return res.status(400).json({
