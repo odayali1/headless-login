@@ -8,7 +8,7 @@ let showFinishedJobs = false;
 let renderScheduled = false;
 let logModalState = { email: null, target: null, jobId: null };
 let groups = [];
-let accountFilters = { group: '', health: '', search: '' };
+let accountFilters = { group: '', health: '', search: '', sort: 'login_newest', idleHours: '' };
 let activeBatchMeta = null;
 let accountPage = { page: 1, limit: 50, total: 0, pages: 1 };
 let accountsReloadTimer = null;
@@ -51,6 +51,8 @@ const els = {
   refreshAccountsBtn: document.getElementById('refreshAccountsBtn'),
   groupFilter: document.getElementById('groupFilter'),
   healthFilter: document.getElementById('healthFilter'),
+  sortFilter: document.getElementById('sortFilter'),
+  idleFilter: document.getElementById('idleFilter'),
   actionTarget: document.getElementById('actionTarget'),
   searchInput: document.getElementById('searchInput'),
   assignGroupInput: document.getElementById('assignGroupInput'),
@@ -909,6 +911,8 @@ async function loadAccounts({ refreshStats = true } = {}) {
     group: accountFilters.group || '',
     health: accountFilters.health || '',
     search: accountFilters.search || '',
+    sort: accountFilters.sort || 'login_newest',
+    idleHours: accountFilters.idleHours || '',
   });
   const res = await fetch(`/api/accounts?${params}`);
   const data = await res.json();
@@ -1169,6 +1173,8 @@ async function fetchFilteredAccountsForActions() {
     group: accountFilters.group || '',
     health: accountFilters.health || '',
     search: accountFilters.search || '',
+    sort: accountFilters.sort || 'login_newest',
+    idleHours: accountFilters.idleHours || '',
   });
   const res = await fetch(`/api/accounts/emails?${params}`);
   const data = await res.json();
@@ -1182,6 +1188,16 @@ els.groupFilter?.addEventListener('change', () => {
 });
 els.healthFilter?.addEventListener('change', () => {
   accountFilters.health = els.healthFilter.value || '';
+  accountPage.page = 1;
+  loadAccounts();
+});
+els.sortFilter?.addEventListener('change', () => {
+  accountFilters.sort = els.sortFilter.value || 'login_newest';
+  accountPage.page = 1;
+  loadAccounts();
+});
+els.idleFilter?.addEventListener('change', () => {
+  accountFilters.idleHours = els.idleFilter.value || '';
   accountPage.page = 1;
   loadAccounts();
 });

@@ -11,7 +11,7 @@ import { ensureCamoufoxInstalled } from './lib/ensure-camoufox.js';
 
 import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 
-import { listAccounts, listAccountsPage, filterAccounts, invalidateAccountsCache, toPublicAccount } from './lib/accounts.js';
+import { listAccounts, listAccountsPage, filterAccounts, sortAccounts, invalidateAccountsCache, toPublicAccount } from './lib/accounts.js';
 import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
 import {
@@ -497,8 +497,8 @@ app.post('/api/smart-refresh/toggle', async (req, res) => {
 
 
 app.get('/api/accounts', async (req, res) => {
-  const { page, limit, group, health, search } = req.query || {};
-  if (page || limit || group || health || search) {
+  const { page, limit, group, health, search, sort, idleHours } = req.query || {};
+  if (page || limit || group || health || search || sort || idleHours) {
     return res.json(
       await listAccountsPage({
         page,
@@ -506,6 +506,8 @@ app.get('/api/accounts', async (req, res) => {
         group: String(group || ''),
         health: String(health || ''),
         search: String(search || ''),
+        sort: String(sort || 'login_newest'),
+        idleHours: Number(idleHours) || 0,
       })
     );
   }
@@ -520,12 +522,16 @@ app.get('/api/accounts', async (req, res) => {
 });
 
 app.get('/api/accounts/emails', async (req, res) => {
-  const { group = '', health = '', search = '' } = req.query || {};
-  const filtered = filterAccounts(await listAccounts(), {
-    group: String(group || ''),
-    health: String(health || ''),
-    search: String(search || ''),
-  });
+  const { group = '', health = '', search = '', sort = 'login_newest', idleHours = '' } = req.query || {};
+  const filtered = sortAccounts(
+    filterAccounts(await listAccounts(), {
+      group: String(group || ''),
+      health: String(health || ''),
+      search: String(search || ''),
+      idleHours: Number(idleHours) || 0,
+    }),
+    String(sort || 'login_newest')
+  );
   res.json({
     accounts: filtered.map((a) => ({
       email: a.email,

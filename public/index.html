@@ -196,6 +196,16 @@
             <option value="backup_verified">Backup: verified</option>
             <option value="backup_required">Backup: prompt — add email</option>
           </select>
+          <select id="sortFilter" title="Order by last login / login attempt">
+            <option value="login_newest">Newest login first</option>
+            <option value="login_oldest">Oldest login first</option>
+          </select>
+          <select id="idleFilter" title="Accounts with no login attempt (success or fail) in this window">
+            <option value="">Any last try</option>
+            <option value="6">No try in 6 hours</option>
+            <option value="12">No try in 12 hours</option>
+            <option value="24">No try in 24 hours</option>
+          </select>
           <select id="actionTarget" title="Which Microsoft app to open for login (same account, one token)">
             <option value="">Login via: Outlook (default)</option>
             <option value="teams">Login via: Teams</option>
