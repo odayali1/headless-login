@@ -218,7 +218,7 @@ app.post('/api/proxy/toggle', (req, res) => {
 
 });
 
-/** Switch active proxy: mobile (iProxy) <-> residential (rotating SOCKS). Persists in DB (survives restart). */
+/** Switch active proxy: mobile (iProxy) <-> residential IPv4 login. Persists in DB (survives restart). */
 app.post('/api/proxy/profile', async (req, res) => {
   const wanted = String(req.body?.profile || '').trim().toLowerCase();
   if (wanted !== 'mobile' && wanted !== 'residential') {
@@ -229,34 +229,23 @@ app.post('/api/proxy/profile', async (req, res) => {
       error: 'PROXY_PROFILE_LOCK=1 — remove it from Coolify env to switch from the dashboard.',
     });
   }
-  if (wanted === 'residential') {
-    // Full residential profile is mutually exclusive with hybrid (hybrid already uses residential for HTTP).
-    if (isHybridProxyEnabled()) setHybridProxyEnabled(false);
-    try {
-      setProxyProfile('residential');
-      parseProxyUrl(getProxyUrl());
-    } catch (err) {
-      setProxyProfile('mobile');
-      return res.status(400).json({
-        error:
-          err.message ||
-          'Set PROXY_RESIDENTIAL_URL in Coolify (socks5://user:pass@host:port) before switching.',
-      });
-    }
-  } else {
-    setProxyProfile('mobile');
-  }
   try {
-    const { resetProxyMode, closeLocalProxy } = await import('./lib/proxy-local.js');
-    resetProxyMode();
-    await closeLocalProxy().catch(() => {});
-  } catch {
-    // ignore
+    // residential → login IPv4 preset (does not touch hybrid Loki IPv6)
+    const selected = selectProxyPreset(wanted === 'residential' ? 'residential-ipv4' : 'huawei-old');
+    try {
+      const { resetProxyMode, closeLocalProxy } = await import('./lib/proxy-local.js');
+      resetProxyMode();
+      await closeLocalProxy().catch(() => {});
+    } catch {
+      // ignore
+    }
+    const status = proxyStatusPayload();
+    console.log(`[proxy] Profile → ${selected.name} login=${status.host}:${status.port}`);
+    broadcast('proxy', status);
+    res.json(status);
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Could not switch proxy profile' });
   }
-  const status = proxyStatusPayload();
-  console.log(`[proxy] Profile → ${status.profile} (${status.host}:${status.port})`);
-  broadcast('proxy', status);
-  res.json(status);
 });
 
 /**
@@ -295,7 +284,10 @@ app.post('/api/proxy/preset', async (req, res) => {
     }
     const status = proxyStatusPayload();
     console.log(
-      `[proxy] Preset → ${selected.name} (${selected.kind}) ${status.host}:${status.port}`
+      `[proxy] Preset → ${selected.name} (${selected.kind}) login=${status.host}:${status.port}` +
+        (status.hybrid
+          ? ` | hybrid Loki=${status.residentialHost}:${status.residentialPort}`
+          : '')
     );
     broadcast('proxy', status);
     res.json(status);

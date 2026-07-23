@@ -234,8 +234,10 @@ function renderProxyPill() {
     els.hybridToggle.className = `status-pill hybrid-pill ${hybrid ? 'online' : 'offline'}`;
     const resHost = proxyState.residentialHost
       ? `${proxyState.residentialHost}:${proxyState.residentialPort || ''}`
-      : 'residential';
-    els.hybridLabel.textContent = hybrid ? `Hybrid ON · Loki→${resHost}` : 'Hybrid OFF';
+      : 'IPv6';
+    els.hybridLabel.textContent = hybrid
+      ? `Hybrid ON · Loki→${resHost}`
+      : 'Hybrid OFF';
   }
   if (els.proxyPreset) {
     const presets = Array.isArray(proxyState.presets) ? proxyState.presets : [];
@@ -267,9 +269,9 @@ function renderProxyPill() {
     ipInfo = proxyState.host
       ? `${presetName} · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
       : `${presetName} · ON`;
-  } else if (proxyState.profile === 'residential') {
+  } else if (proxyState.loginResidentialIpv4 || proxyState.profile === 'residential') {
     ipInfo = proxyState.host
-      ? `${presetName} · ${proxyState.host}:${proxyState.port} · rotates per request`
+      ? `${presetName} login · ${proxyState.host}:${proxyState.port}${hybrid ? ' · refresh=mobile+IPv6' : ' · rotates per request'}`
       : `${presetName} · ON`;
   } else {
     ipInfo = proxyState.host
@@ -301,13 +303,6 @@ els.proxyToggle?.addEventListener('click', async () => {
 
 els.proxyPreset?.addEventListener('change', async () => {
   const id = els.proxyPreset.value;
-  const prev = proxyState.activePresetId;
-  if (id === 'residential-ipv4' && proxyState.hybrid) {
-    if (!confirm('Switching to Residential IPv4 turns Hybrid OFF. Continue?')) {
-      els.proxyPreset.value = prev || 'huawei-old';
-      return;
-    }
-  }
   els.proxyPreset.disabled = true;
   const res = await fetch('/api/proxy/preset', {
     method: 'POST',
