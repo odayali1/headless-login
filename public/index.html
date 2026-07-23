@@ -26,6 +26,17 @@
           <option value="residential-ipv4-me">Residential IPv4 rotating ME</option>
           <option value="residential-ipv4-global">Residential IPv4 rotating global</option>
         </select>
+        <label class="parallel-select-wrap" title="How many Camoufox logins/re-logins run at once">
+          <span class="parallel-select-label">Parallel</span>
+          <select id="loginParallel" class="proxy-profile-select parallel-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </label>
         <button type="button" class="btn ghost header-link" id="proxyRotateBtn" title="Rotate mobile IP (changeip)">Rotate IP</button>
         <button type="button" class="status-pill hybrid-pill" id="hybridToggle" title="ON: Loki refresh via residential IPv6; cookie SSO via mobile. Login can be mobile or Residential IPv4.">
           <span class="dot"></span>

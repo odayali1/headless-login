@@ -20,6 +20,7 @@ const els = {
   proxyToggle: document.getElementById('proxyToggle'),
   proxyLabel: document.getElementById('proxyLabel'),
   proxyPreset: document.getElementById('proxyPreset'),
+  loginParallel: document.getElementById('loginParallel'),
   proxyRotateBtn: document.getElementById('proxyRotateBtn'),
   hybridToggle: document.getElementById('hybridToggle'),
   hybridLabel: document.getElementById('hybridLabel'),
@@ -544,8 +545,61 @@ function syncPauseQueueBtn() {
   els.pauseQueueBtn.classList.toggle('warn', paused);
 }
 
+function syncLoginParallelSelect() {
+  if (!els.loginParallel) return;
+  const n = Number(queueState.parallel) || 1;
+  const locked = !!queueState.parallelLocked;
+  els.loginParallel.disabled = locked;
+  if (![...els.loginParallel.options].some((o) => Number(o.value) === n)) {
+    const opt = document.createElement('option');
+    opt.value = String(n);
+    opt.textContent = String(n);
+    els.loginParallel.appendChild(opt);
+  }
+  els.loginParallel.value = String(n);
+  els.loginParallel.title = locked
+    ? 'LOGIN_PARALLEL_LOCK=1 — change Coolify env to unlock'
+    : 'Camoufox login/re-login parallelism (saved in DB)';
+}
+
+els.loginParallel?.addEventListener('change', async () => {
+  const parallel = Number(els.loginParallel.value);
+  const prev = Number(queueState.parallel) || 1;
+  const isMobilePreset =
+    proxyState.activePresetId === 'huawei-old' || proxyState.activePresetId === 'samsung-new';
+  if (parallel > 2 && isMobilePreset) {
+    if (
+      !confirm(
+        `Parallel ${parallel} on a mobile phone proxy often causes Microsoft 429s. Prefer Residential IPv4 rotating. Continue anyway?`
+      )
+    ) {
+      els.loginParallel.value = String(prev);
+      return;
+    }
+  }
+  els.loginParallel.disabled = true;
+  try {
+    const res = await fetch('/api/queue/parallel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parallel }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || 'Could not set parallel');
+      els.loginParallel.value = String(prev);
+      return;
+    }
+    queueState = { ...queueState, ...data };
+    renderQueueBanner();
+  } finally {
+    syncLoginParallelSelect();
+  }
+});
+
 function renderQueueBanner() {
   if (!els.queueBanner) return;
+  syncLoginParallelSelect();
 
   const batch = getBatchProgress();
   const active = (jobStats.running || 0) + (jobStats.starting || 0) + (jobStats.queued || 0);

@@ -63,6 +63,9 @@ import {
   getProxyHttpUrl,
   getProxyPreferMode,
   selectProxyPreset,
+  setLoginParallel,
+  isLoginParallelLocked,
+  LOGIN_PARALLEL_MAX,
 } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 import { closeLocalProxy } from './lib/proxy-local.js';
@@ -138,23 +141,12 @@ const loginQueue = createLoginQueue({
   },
 });
 
-const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQueuePaused } = loginQueue;
+const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQueuePaused, setParallel: setLoginQueueParallel } =
+  loginQueue;
 {
-  const raw = process.env.LOGIN_PARALLEL;
-  const requested = raw == null || raw === '' ? 1 : Number(raw);
-  const capped =
-    Number.isFinite(requested) &&
-    Math.trunc(requested) > 1 &&
-    process.env.LOGIN_PARALLEL_FORCE !== '1' &&
-    loginQueue.parallel === 1;
   console.log(
-    `[queue] Login parallel: ${loginQueue.parallel}${
-      capped
-        ? ' (LOGIN_PARALLEL capped — set LOGIN_PARALLEL_FORCE=1 to allow parallel)'
-        : raw
-          ? ` (LOGIN_PARALLEL=${raw})`
-          : ''
-    }`
+    `[queue] Login parallel: ${loginQueue.parallel}` +
+      (isLoginParallelLocked() ? ' (LOGIN_PARALLEL_LOCK=1 — env only)' : ' (dashboard can change)')
   );
 }
 
@@ -1018,6 +1010,24 @@ app.get('/api/queue/status', (_req, res) => {
 
   res.json({ ...getQueueStatus(), jobStats: jobStats() });
 
+});
+
+/** Set Camoufox login/re-login parallelism (1…10). Persists in DB. */
+app.post('/api/queue/parallel', (req, res) => {
+  if (isLoginParallelLocked()) {
+    return res.status(400).json({
+      error: 'LOGIN_PARALLEL_LOCK=1 — remove it from Coolify to change parallel from the dashboard.',
+    });
+  }
+  const wanted = Number(req.body?.parallel);
+  if (!Number.isFinite(wanted) || wanted < 1 || wanted > LOGIN_PARALLEL_MAX) {
+    return res.status(400).json({ error: `parallel must be 1–${LOGIN_PARALLEL_MAX}` });
+  }
+  const n = setLoginParallel(wanted);
+  const status = setLoginQueueParallel(n);
+  console.log(`[queue] Dashboard set login parallel → ${n}`);
+  broadcast('queue-status', status);
+  res.json({ ...status, jobStats: jobStats() });
 });
 
 
