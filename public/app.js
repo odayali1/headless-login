@@ -660,7 +660,9 @@ function renderQueueBanner() {
     els.queueBanner.innerHTML = `
       <div class="queue-banner busy">
         <div class="queue-banner-head"><span class="queue-banner-title">Queue active${
-          queueState.parallel > 1 ? ` · ${queueState.running || currentJobs.length}/${queueState.parallel} parallel` : ''
+          queueState.parallel > 1
+            ? ` · ${Math.min(queueState.running || currentJobs.length || 0, queueState.parallel)}/${queueState.parallel} parallel`
+            : ''
         }</span></div>
         <div class="queue-banner-detail">Processing <strong>${escapeHtml(currentLabel)}</strong>${
           queueState.paused ? ' · <span class="queue-warn">will pause after current</span>' : ''
