@@ -44,7 +44,7 @@ import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
-import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot, afterLoginIpSoftBlock } from './lib/proxy.js';
+import { beforeAccountLogin, afterAccountLoginSuccess, beforeAccountRefresh, rotateProxyIp, endLoginProxyExclusive, GCT_429_SETTLE_MS, markGctHot, afterLoginIpSoftBlock, isLoginProxyExclusive } from './lib/proxy.js';
 
 import {
   getProxyStatus,
@@ -62,6 +62,7 @@ import {
   getResidentialProxyUrl,
   getProxyHttpUrl,
   getProxyPreferMode,
+  selectProxyPreset,
 } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
 import { closeLocalProxy } from './lib/proxy-local.js';
@@ -259,6 +260,51 @@ app.post('/api/proxy/profile', async (req, res) => {
 });
 
 /**
+ * Switch named login proxy (Huawei old / New Samsung / Residential IPv4).
+ * Only writes existing proxy slots — login path unchanged. Blocked while a login holds the IP.
+ */
+app.post('/api/proxy/preset', async (req, res) => {
+  const id = String(req.body?.id || '').trim();
+  if (!id) {
+    return res.status(400).json({ error: 'id is required (huawei-old | samsung-new | residential-ipv4)' });
+  }
+  if (/^(1|true|yes|on)$/i.test(String(process.env.PROXY_PROFILE_LOCK || '').trim())) {
+    return res.status(400).json({
+      error: 'PROXY_PROFILE_LOCK=1 — remove it from Coolify env to switch proxies from the dashboard.',
+    });
+  }
+  if (isLoginProxyExclusive()) {
+    return res.status(409).json({
+      error: 'Login in progress — wait for it to finish before switching proxy (same IP must stick).',
+    });
+  }
+  const q = getQueueStatus();
+  if ((q.running || 0) > 0) {
+    return res.status(409).json({
+      error: 'Login queue is busy — wait until current login finishes before switching proxy.',
+    });
+  }
+  try {
+    const selected = selectProxyPreset(id);
+    try {
+      const { resetProxyMode, closeLocalProxy, closeResidentialRelay } = await import('./lib/proxy-local.js');
+      resetProxyMode();
+      await Promise.all([closeLocalProxy().catch(() => {}), closeResidentialRelay().catch(() => {})]);
+    } catch {
+      // ignore relay teardown errors
+    }
+    const status = proxyStatusPayload();
+    console.log(
+      `[proxy] Preset → ${selected.name} (${selected.kind}) ${status.host}:${status.port}`
+    );
+    broadcast('proxy', status);
+    res.json(status);
+  } catch (err) {
+    return res.status(400).json({ error: err.message || 'Could not switch proxy preset' });
+  }
+});
+
+/**
  * Hybrid: Loki/MSAL refresh via built-in residential IPv6 SOCKS;
  * login + Camoufox + cookie SSO stay on mobile (login.live.com).
  */
@@ -291,14 +337,21 @@ app.post('/api/proxy/hybrid', async (req, res) => {
 app.post('/api/proxy/rotate', async (_req, res) => {
 
   try {
+    if (isLoginProxyExclusive()) {
+      return res.status(409).json({
+        error: 'Login in progress — cannot rotate IP until it finishes (same IP must stick).',
+      });
+    }
 
-    await rotateProxyIp((step, message) => console.log(`[${step}]`, message));
+    const result = await rotateProxyIp((step, message) => console.log(`[${step}]`, message), {
+      force: true,
+    });
 
     const status = proxyStatusPayload();
 
     broadcast('proxy', status);
 
-    res.json(status);
+    res.json({ ...status, rotateResult: result });
 
   } catch (err) {
 

@@ -19,7 +19,8 @@ const els = {
   obscuraStatus: document.getElementById('obscuraStatus'),
   proxyToggle: document.getElementById('proxyToggle'),
   proxyLabel: document.getElementById('proxyLabel'),
-  proxyProfile: document.getElementById('proxyProfile'),
+  proxyPreset: document.getElementById('proxyPreset'),
+  proxyRotateBtn: document.getElementById('proxyRotateBtn'),
   hybridToggle: document.getElementById('hybridToggle'),
   hybridLabel: document.getElementById('hybridLabel'),
   singleForm: document.getElementById('singleForm'),
@@ -236,28 +237,44 @@ function renderProxyPill() {
       : 'residential';
     els.hybridLabel.textContent = hybrid ? `Hybrid ON · Loki→${resHost}` : 'Hybrid OFF';
   }
-  if (els.proxyProfile) {
-    els.proxyProfile.disabled = hybrid;
-    if (proxyState.profile) {
-      els.proxyProfile.value = proxyState.profile === 'residential' ? 'residential' : 'mobile';
+  if (els.proxyPreset) {
+    const presets = Array.isArray(proxyState.presets) ? proxyState.presets : [];
+    if (presets.length) {
+      const cur = els.proxyPreset.value;
+      els.proxyPreset.innerHTML = presets
+        .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+        .join('');
+      const wanted = proxyState.activePresetId || cur;
+      if (wanted && [...els.proxyPreset.options].some((o) => o.value === wanted)) {
+        els.proxyPreset.value = wanted;
+      }
+    } else if (proxyState.activePresetId) {
+      els.proxyPreset.value = proxyState.activePresetId;
     }
+    els.proxyPreset.disabled = false;
   }
-  const profile = proxyState.profile === 'residential' ? 'Residential' : 'Mobile';
+  if (els.proxyRotateBtn) {
+    els.proxyRotateBtn.disabled = !on || !proxyState.canRotate;
+    els.proxyRotateBtn.title = proxyState.canRotate
+      ? 'Rotate mobile IP now (changeip)'
+      : 'Rotate IP is only for mobile proxies (Huawei / Samsung)';
+  }
+  const presetName = proxyState.activePresetName || (proxyState.profile === 'residential' ? 'Residential' : 'Mobile');
   let ipInfo;
   if (!on) {
     ipInfo = 'Proxy OFF (direct — not recommended)';
   } else if (hybrid) {
     ipInfo = proxyState.host
-      ? `Mobile login · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
-      : 'Mobile login · ON';
+      ? `${presetName} · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
+      : `${presetName} · ON`;
   } else if (proxyState.profile === 'residential') {
     ipInfo = proxyState.host
-      ? `${profile} · ${proxyState.host}:${proxyState.port} · rotates per request`
-      : `${profile} · ON (set PROXY_RESIDENTIAL_URL)`;
+      ? `${presetName} · ${proxyState.host}:${proxyState.port} · rotates per request`
+      : `${presetName} · ON`;
   } else {
     ipInfo = proxyState.host
-      ? `${profile} · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
-      : `${profile} · ON`;
+      ? `${presetName} · ${proxyState.host}:${proxyState.port} · ${proxyState.accountsOnCurrentIp}/${proxyState.rotateAfter} on IP`
+      : `${presetName} · ON`;
   }
   const bw = proxyState.bandwidth;
   const bwInfo = bw?.mbTotal != null ? ` · ${bw.mbTotal} MB proxied` : '';
@@ -282,21 +299,62 @@ els.proxyToggle?.addEventListener('click', async () => {
   renderProxyPill();
 });
 
-els.proxyProfile?.addEventListener('change', async () => {
-  const profile = els.proxyProfile.value;
-  const res = await fetch('/api/proxy/profile', {
+els.proxyPreset?.addEventListener('change', async () => {
+  const id = els.proxyPreset.value;
+  const prev = proxyState.activePresetId;
+  if (id === 'residential-ipv4' && proxyState.hybrid) {
+    if (!confirm('Switching to Residential IPv4 turns Hybrid OFF. Continue?')) {
+      els.proxyPreset.value = prev || 'huawei-old';
+      return;
+    }
+  }
+  els.proxyPreset.disabled = true;
+  const res = await fetch('/api/proxy/preset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profile }),
+    body: JSON.stringify({ id }),
   });
   const data = await res.json().catch(() => ({}));
+  els.proxyPreset.disabled = false;
   if (!res.ok) {
-    alert(data.error || 'Could not switch proxy profile');
+    alert(data.error || 'Could not switch proxy');
     await loadProxy();
     return;
   }
   applyProxyState(data);
   renderProxyPill();
+});
+
+els.proxyRotateBtn?.addEventListener('click', async () => {
+  if (!proxyState.canRotate) {
+    alert('Rotate IP only works for mobile proxies (Huawei old / New Samsung).');
+    return;
+  }
+  if (!confirm('Rotate mobile IP now? Wait until no login is running.')) return;
+  els.proxyRotateBtn.disabled = true;
+  els.proxyRotateBtn.textContent = 'Rotating…';
+  try {
+    const res = await fetch('/api/proxy/rotate', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || 'Rotate failed');
+      await loadProxy();
+      return;
+    }
+    applyProxyState(data);
+    renderProxyPill();
+    const r = data.rotateResult;
+    if (r?.skipped) {
+      alert(`Rotate skipped: ${r.reason || 'busy'}`);
+    } else if (r?.reason === 'residential_reconnect') {
+      alert('Residential proxy — IP already rotates per connection (no changeip).');
+    }
+  } catch (err) {
+    alert(err.message || 'Rotate failed');
+  } finally {
+    if (els.proxyRotateBtn) els.proxyRotateBtn.textContent = 'Rotate IP';
+    renderProxyPill();
+  }
 });
 
 els.hybridToggle?.addEventListener('click', async () => {

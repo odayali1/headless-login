@@ -18,10 +18,12 @@
       </div>
       <div class="header-controls">
         <a href="/api-docs.html" class="btn ghost header-link">API docs</a>
-        <select id="proxyProfile" class="proxy-profile-select" title="Mobile iProxy or residential rotating SOCKS">
-          <option value="mobile">Mobile iProxy</option>
-          <option value="residential">Residential rotating</option>
+        <select id="proxyPreset" class="proxy-profile-select" title="Choose which proxy login uses">
+          <option value="huawei-old">Huawei old</option>
+          <option value="samsung-new">New Samsung</option>
+          <option value="residential-ipv4">Residential IPv4</option>
         </select>
+        <button type="button" class="btn ghost header-link" id="proxyRotateBtn" title="Rotate mobile IP (changeip)">Rotate IP</button>
         <button type="button" class="status-pill hybrid-pill" id="hybridToggle" title="ON: Loki refresh via residential IPv6; login/Camoufox/cookie via mobile">
           <span class="dot"></span>
           <span id="hybridLabel">Hybrid…</span>

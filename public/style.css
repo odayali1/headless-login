@@ -48,8 +48,13 @@ header {
   border-radius: 8px;
   padding: 0.35rem 0.6rem;
   font-size: 0.8rem;
-  max-width: 11rem;
+  max-width: 13rem;
   cursor: pointer;
+}
+
+#proxyRotateBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .header-controls {
