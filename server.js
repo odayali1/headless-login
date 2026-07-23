@@ -148,7 +148,13 @@ const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQue
     process.env.LOGIN_PARALLEL_FORCE !== '1' &&
     loginQueue.parallel === 1;
   console.log(
-    `[queue] Login parallel: ${loginQueue.parallel}${capped ? ' (LOGIN_PARALLEL=2 capped — set LOGIN_PARALLEL_FORCE=1 to allow 2)' : raw ? ` (LOGIN_PARALLEL=${raw})` : ''}`
+    `[queue] Login parallel: ${loginQueue.parallel}${
+      capped
+        ? ' (LOGIN_PARALLEL capped — set LOGIN_PARALLEL_FORCE=1 to allow parallel)'
+        : raw
+          ? ` (LOGIN_PARALLEL=${raw})`
+          : ''
+    }`
   );
 }
 
