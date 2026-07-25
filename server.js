@@ -1,3 +1,5 @@
+import './lib/process-guards.js';
+
 import express from 'express';
 
 import path from 'node:path';
@@ -97,35 +99,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT = process.env.PORT || 3847;
-
-/** Parallel Camoufox can throw ProtocolError after a page/browser closes; that used to kill Node and wipe in-memory jobs. */
-function isClosedBrowserError(err) {
-  if (!err) return false;
-  if (err.type === 'closed') return true;
-  const msg = String(err.message || err);
-  return /Target closed|browser has been closed|Protocol error|Connection closed|Page\.dispatchMouseEvent|Session closed/i.test(
-    msg
-  );
-}
-
-process.on('unhandledRejection', (reason) => {
-  const err = reason instanceof Error ? reason : new Error(String(reason));
-  if (isClosedBrowserError(err) || isClosedBrowserError(reason)) {
-    console.error('[process] Ignored closed-browser rejection (keep jobs alive):', err.message);
-    return;
-  }
-  console.error('[process] unhandledRejection:', err.stack || err.message);
-});
-
-process.on('uncaughtException', (err) => {
-  if (isClosedBrowserError(err)) {
-    console.error('[process] Ignored closed-browser exception (keep jobs alive):', err.message);
-    return;
-  }
-  console.error('[process] uncaughtException:', err.stack || err.message);
-  // Non-browser fatals still exit so Coolify can restart a truly broken process.
-  process.exit(1);
-});
 
 
 
