@@ -66,7 +66,6 @@ import {
   getProxyPreferMode,
   selectProxyPreset,
   setLoginParallel,
-  isLoginParallelLocked,
   LOGIN_PARALLEL_MAX,
 } from './lib/settings.js';
 import { getBandwidthStats, resetBandwidthStats } from './lib/bandwidth-stats.js';
@@ -147,8 +146,7 @@ const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQue
   loginQueue;
 {
   console.log(
-    `[queue] Login parallel: ${loginQueue.parallel}` +
-      (isLoginParallelLocked() ? ' (LOGIN_PARALLEL_LOCK=1 — env only)' : ' (dashboard can change)')
+    `[queue] Login parallel: ${loginQueue.parallel} (dashboard Parallel dropdown; max ${LOGIN_PARALLEL_MAX})`
   );
 }
 
