@@ -1020,13 +1020,8 @@ app.get('/api/queue/status', (_req, res) => {
 
 });
 
-/** Set Camoufox login/re-login parallelism (1…10). Persists in DB. */
+/** Set Camoufox login/re-login parallelism (1…LOGIN_PARALLEL_MAX). Persists in DB. Dashboard owns this. */
 app.post('/api/queue/parallel', (req, res) => {
-  if (isLoginParallelLocked()) {
-    return res.status(400).json({
-      error: 'LOGIN_PARALLEL_LOCK=1 — remove it from Coolify to change parallel from the dashboard.',
-    });
-  }
   const wanted = Number(req.body?.parallel);
   if (!Number.isFinite(wanted) || wanted < 1 || wanted > LOGIN_PARALLEL_MAX) {
     return res.status(400).json({ error: `parallel must be 1–${LOGIN_PARALLEL_MAX}` });
