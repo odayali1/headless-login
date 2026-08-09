@@ -535,6 +535,8 @@ input:focus, select:focus, textarea:focus {
 
 .btn.ghost { background: transparent; color: var(--muted); padding: 0.35rem 0.6rem; font-size: 0.8rem; }
 .btn.ghost:hover { color: var(--text); }
+.btn.ghost.danger { color: var(--error); border: 1px solid rgba(240, 113, 120, 0.35); }
+.btn.ghost.danger:hover { background: rgba(240, 113, 120, 0.12); color: var(--error); }
 
 .btn.small {
   padding: 0.3rem 0.55rem;

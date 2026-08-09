@@ -60,9 +60,11 @@ const els = {
   groupRefreshBtn: document.getElementById('groupRefreshBtn'),
   filteredRefreshBtn: document.getElementById('filteredRefreshBtn'),
   filteredReloginBtn: document.getElementById('filteredReloginBtn'),
+  filteredDeleteBtn: document.getElementById('filteredDeleteBtn'),
   groupReloginBtn: document.getElementById('groupReloginBtn'),
   groupSoftbanBtn: document.getElementById('groupSoftbanBtn'),
   groupExportBtn: document.getElementById('groupExportBtn'),
+  groupDeleteBtn: document.getElementById('groupDeleteBtn'),
   logModal: document.getElementById('logModal'),
   logModalTitle: document.getElementById('logModalTitle'),
   logModalClose: document.getElementById('logModalClose'),
@@ -905,6 +907,10 @@ function renderAccountsPagination() {
 }
 
 async function loadAccounts({ refreshStats = true } = {}) {
+  if (els.accountsBody) {
+    els.accountsBody.innerHTML =
+      '<tr><td colspan="11" class="muted">Loading accounts…</td></tr>';
+  }
   const params = new URLSearchParams({
     page: String(accountPage.page),
     limit: String(accountPage.limit),
@@ -1233,7 +1239,17 @@ async function runGroupAction(action) {
   if (!group) return alert('Pick a group from filter or type a group name first.');
   const backup =
     action === 'relogin' ? reloginBackupBody() : backupLoginBody();
-  if (action === 'relogin') {
+  if (action === 'delete') {
+    const countHint = accountFilters.group === group ? accountPage.total : 'all';
+    if (
+      !confirm(
+        `DELETE ${countHint} account(s) in group "${group}"?\n\nThis permanently removes profiles, credentials, and sessions. Cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    if (!confirm(`Type-confirm: really delete group "${group}"?`)) return;
+  } else if (action === 'relogin') {
     const skipNote = backup.skipBackupEmail ? ' (skip backup-email if shown)' : ' (will NOT auto-skip backup-email)';
     const freshNote = backup.regenerateFingerprint ? ' + fresh Camoufox profile' : '';
     const phoneNote = backup.mimicPhone === true ? ' + phone mimic' : backup.mimicPhone === false ? ' + desktop fingerprint' : '';
@@ -1250,10 +1266,57 @@ async function runGroupAction(action) {
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || 'Group action failed');
+  if (action === 'delete') {
+    alert(`Deleted ${data.count || 0} account(s) from group "${group}".`);
+    await loadGroups();
+  }
   await loadAccounts();
 }
 
+function currentFilterBody() {
+  return {
+    group: accountFilters.group || '',
+    health: accountFilters.health || '',
+    search: accountFilters.search || '',
+    idleHours: accountFilters.idleHours || '',
+  };
+}
+
+function describeCurrentFilter() {
+  const bits = [];
+  if (accountFilters.group) bits.push(`group=${accountFilters.group}`);
+  if (accountFilters.health) bits.push(`health=${accountFilters.health}`);
+  if (accountFilters.search) bits.push(`search=${accountFilters.search}`);
+  if (accountFilters.idleHours) bits.push(`idle>${accountFilters.idleHours}h`);
+  return bits.length ? bits.join(', ') : 'all accounts';
+}
+
 async function runFilteredAction(action) {
+  if (action === 'delete') {
+    const count = accountPage.total || 0;
+    if (!count) return alert('No accounts match the current filter.');
+    const filterLabel = describeCurrentFilter();
+    if (
+      !confirm(
+        `DELETE ${count} account(s) matching filter (${filterLabel})?\n\nRemoves profiles, credentials, and sessions. Cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    if (!confirm(`Final confirm: delete ${count} filtered account(s)?`)) return;
+    const res = await fetch('/api/accounts/bulk-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', filter: currentFilterBody() }),
+    });
+    const data = await res.json();
+    if (!res.ok) return alert(data.error || 'Bulk delete failed');
+    alert(`Deleted ${data.count || 0} account(s).`);
+    await loadGroups();
+    await loadAccounts();
+    return;
+  }
+
   const selected = await fetchFilteredAccountsForActions();
   if (!selected.length) return alert('No accounts match the current filter.');
   const withPassword = selected.filter((a) => a.hasStoredPassword);
@@ -1289,9 +1352,11 @@ async function runFilteredAction(action) {
 
 els.filteredRefreshBtn?.addEventListener('click', () => runFilteredAction('refresh'));
 els.filteredReloginBtn?.addEventListener('click', () => runFilteredAction('relogin'));
+els.filteredDeleteBtn?.addEventListener('click', () => runFilteredAction('delete'));
 els.groupRefreshBtn?.addEventListener('click', () => runGroupAction('refresh'));
 els.groupReloginBtn?.addEventListener('click', () => runGroupAction('relogin'));
 els.groupSoftbanBtn?.addEventListener('click', () => runGroupAction('check-softban'));
+els.groupDeleteBtn?.addEventListener('click', () => runGroupAction('delete'));
 els.groupExportBtn?.addEventListener('click', () => {
   const group = accountFilters.group || String(els.assignGroupInput?.value || '').trim();
   if (!group) return alert('Pick or type a group first.');

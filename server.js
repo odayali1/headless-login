@@ -3,6 +3,7 @@ import './lib/process-guards.js';
 import express from 'express';
 
 import path from 'node:path';
+import fs from 'node:fs/promises';
 
 import { fileURLToPath } from 'node:url';
 
@@ -560,42 +561,40 @@ app.get('/api/accounts/:email/:target/token', async (req, res) => {
 
 
 
-app.delete('/api/accounts/:email/:target', async (req, res) => {
-
-  const { email, target } = req.params;
-
-  const fs = await import('node:fs/promises');
-
-  const { deleteAllProfilesForEmail, CANONICAL_TARGET } = await import('./lib/profile.js');
-
+async function fullyDeleteAccount(email) {
+  const e = String(email || '').trim();
+  if (!e) return;
   try {
-
-    await deleteAllProfilesForEmail(email);
-
+    await deleteAllProfilesForEmail(e);
   } catch {
-
     // profile may not exist
-
   }
-
   try {
-
-    await fs.rm(firefoxProfileDir(email, CANONICAL_TARGET), { recursive: true, force: true });
-
+    await fs.rm(firefoxProfileDir(e, CANONICAL_TARGET), { recursive: true, force: true });
   } catch {
-
     // firefox profile may not exist
-
   }
+  deleteAccountCredentials(e);
+  cancelQueued({ email: e, target: CANONICAL_TARGET });
+}
 
-  deleteAccountCredentials(email);
+async function mapPool(items, concurrency, fn) {
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i], i);
+    }
+  }
+  const n = Math.min(concurrency, Math.max(1, items.length));
+  await Promise.all(Array.from({ length: n }, () => worker()));
+}
 
-  cancelQueued({ email, target: CANONICAL_TARGET });
-
+app.delete('/api/accounts/:email/:target', async (req, res) => {
+  const { email } = req.params;
+  await fullyDeleteAccount(email);
   broadcastAccounts();
-
   res.json({ ok: true });
-
 });
 
 
@@ -857,14 +856,17 @@ async function queueAccountsAction(
   };
   const accepted = [];
   const loginVia = resolveLoginVia(loginAs);
+
+  if (action === 'delete') {
+    const emails = [...new Set(accounts.map((a) => String(a.email || '').trim()).filter(Boolean))];
+    await mapPool(emails, 16, async (email) => {
+      await fullyDeleteAccount(email);
+    });
+    return emails.map((email) => ({ email, target: CANONICAL_TARGET, status: 'deleted' }));
+  }
+
   for (const acc of accounts) {
     const email = acc.email;
-    if (action === 'delete') {
-      deleteAccountCredentials(email);
-      cancelQueued({ email, target: CANONICAL_TARGET });
-      accepted.push({ email, target: CANONICAL_TARGET, status: 'deleted' });
-      continue;
-    }
     if (action === 'refresh') {
       // Never enqueue refresh on the login queue — that made login sit behind bulk refresh.
       const queued = queueRefreshJob(email, CANONICAL_TARGET);
@@ -918,22 +920,33 @@ app.post('/api/accounts/bulk-action', async (req, res) => {
   const {
     action,
     accounts: list,
+    filter: filterBody = null,
     skipBackupEmail = true,
     backupEmailMode = '',
     loginAs = '',
     regenerateFingerprint = false,
   } = req.body || {};
   const mimicPhone = parseMimicPhoneOption(req.body);
-  if (!Array.isArray(list) || list.length === 0) {
-    return res.status(400).json({ error: 'accounts array is required.' });
-  }
   if (!['refresh', 'relogin', 'check-softban', 'delete'].includes(action)) {
     return res.status(400).json({ error: 'Use action: refresh, relogin, check-softban, delete' });
   }
 
-  const normalized = list
-    .map((a) => ({ email: String(a.email || '').trim(), target: a.target || 'outlook' }))
-    .filter((a) => a.email && TARGETS[a.target]);
+  let normalized = Array.isArray(list)
+    ? list
+        .map((a) => ({ email: String(a.email || '').trim(), target: a.target || 'outlook' }))
+        .filter((a) => a.email && TARGETS[a.target])
+    : [];
+
+  // Resolve from current dashboard filters so huge deletes don't require shipping 10k+ emails.
+  if (normalized.length === 0 && filterBody && typeof filterBody === 'object') {
+    const filtered = filterAccounts(await listAccounts(), {
+      group: String(filterBody.group || ''),
+      health: String(filterBody.health || ''),
+      search: String(filterBody.search || ''),
+      idleHours: Number(filterBody.idleHours) || 0,
+    });
+    normalized = filtered.map((a) => ({ email: a.email, target: CANONICAL_TARGET }));
+  }
 
   if (normalized.length === 0) {
     return res.status(400).json({ error: 'No valid accounts in request.' });
