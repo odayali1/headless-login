@@ -73,6 +73,21 @@ try {
     'https://login.live.com/',
   ]);
   console.log(`  login.live.com via local: ${liveLocal}`);
+
+  const cdn = await curl([
+    '-sS',
+    '-k',
+    '-m',
+    '25',
+    '-x',
+    local,
+    '-o',
+    'NUL',
+    '-w',
+    'HTTP %{http_code}',
+    'https://logincdn.msauth.net/',
+  ]);
+  console.log(`  logincdn.msauth.net passthrough: ${cdn}`);
 } finally {
   await stopFireproxLocalProxy({ force: true });
 }
