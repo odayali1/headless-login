@@ -256,7 +256,7 @@ app.post('/api/proxy/preset', async (req, res) => {
   if (!id) {
     return res.status(400).json({
       error:
-        'id is required (huawei-old | samsung-new | residential-ipv4 | residential-ipv4-rotating | residential-ipv4-me | residential-ipv4-global | proxyscrape-residential)',
+        'id is required (huawei-old | samsung-new | residential-ipv4 | residential-ipv4-rotating | residential-ipv4-me | residential-ipv4-global | proxyscrape-residential | aws-api)',
     });
   }
   if (/^(1|true|yes|on)$/i.test(String(process.env.PROXY_PROFILE_LOCK || '').trim())) {
