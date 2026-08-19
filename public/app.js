@@ -920,6 +920,19 @@ async function loadAccounts({ refreshStats = true } = {}) {
     sort: accountFilters.sort || 'login_newest',
     idleHours: accountFilters.idleHours || '',
   });
+
+  // Stats must not block the table — at 55k a cold scan can take minutes.
+  if (refreshStats) {
+    fetch('/api/accounts/stats')
+      .then((r) => r.json())
+      .then((stats) => {
+        if (stats?.error && stats.total == null) return;
+        accountStats = stats;
+        renderAccountStats();
+      })
+      .catch(() => {});
+  }
+
   const res = await fetch(`/api/accounts?${params}`);
   const data = await res.json();
   accounts = data.accounts || [];
@@ -931,11 +944,6 @@ async function loadAccounts({ refreshStats = true } = {}) {
   };
   renderAccounts();
   renderAccountsPagination();
-  if (refreshStats) {
-    const statsRes = await fetch('/api/accounts/stats');
-    accountStats = await statsRes.json();
-    renderAccountStats();
-  }
 }
 
 let loadAccountsDebounce;
@@ -1152,7 +1160,15 @@ els.refreshAccountsBtn.addEventListener('click', async () => {
   const prev = btn.textContent;
   btn.textContent = 'Loading…';
   try {
-    // Stats already stream via SSE; only reload the visible page of rows.
+    // Fresh stats in background; table uses cache when possible.
+    fetch('/api/accounts/stats?fresh=1')
+      .then((r) => r.json())
+      .then((stats) => {
+        if (stats?.total == null && stats?.error) return;
+        accountStats = stats;
+        renderAccountStats();
+      })
+      .catch(() => {});
     await loadAccounts({ refreshStats: false });
   } finally {
     btn.textContent = prev;

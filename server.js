@@ -14,7 +14,7 @@ import { ensureCamoufoxInstalled } from './lib/ensure-camoufox.js';
 
 import { loginMicrosoft, TARGETS } from './lib/microsoft-login.js';
 
-import { listAccounts, listAccountsPage, filterAccounts, sortAccounts, invalidateAccountsCache, toPublicAccount } from './lib/accounts.js';
+import { listAccounts, listAccountsPage, filterAccounts, sortAccounts, invalidateAccountsCache, peekAccountsCache, rebuildAccountsList, toPublicAccount } from './lib/accounts.js';
 import { computeAccountStats } from './lib/account-health.js';
 import { exportCsv } from './lib/account-export.js';
 import {
@@ -43,7 +43,7 @@ import {
 } from './lib/db.js';
 
 import { runStartupMigrations } from './lib/migrate.js';
-import { ensureEnvWebhook, notifyAccountTokenUpdated } from './lib/sync-webhooks.js';
+import { ensureEnvWebhook, notifyAccountTokenUpdated, setWebhookLoginBusyCheck } from './lib/sync-webhooks.js';
 
 import { batchDelayMs, sleep } from './lib/anti-detect.js';
 
@@ -150,6 +150,9 @@ const { enqueue: enqueueLogin, getStatus: getQueueStatus, setPaused: setLoginQue
     `[queue] Login parallel: ${loginQueue.parallel} (dashboard Parallel dropdown; max ${LOGIN_PARALLEL_MAX})`
   );
 }
+
+// Pause outbound sync webhooks while Camoufox login is running (protects the other app).
+setWebhookLoginBusyCheck(() => (getQueueStatus().running || 0) > 0);
 
 
 
@@ -361,6 +364,10 @@ let accountsBroadcastTimer = null;
 let accountsBroadcastInFlight = false;
 let accountsBroadcastAgain = false;
 let accountsStatsSeq = 0;
+/** Last computed stats — served instantly so refresh never waits on a 55k scan. */
+let lastAccountStats = null;
+
+const ACCOUNTS_BROADCAST_DEBOUNCE_MS = Number(process.env.ACCOUNTS_BROADCAST_DEBOUNCE_MS || 15_000);
 
 function broadcastAccounts() {
   invalidateAccountsCache();
@@ -369,20 +376,21 @@ function broadcastAccounts() {
     return;
   }
   clearTimeout(accountsBroadcastTimer);
-  // Longer debounce under bulk cookie/Camoufox refresh — avoid scanning ~1k profiles every 300ms.
+  // Long debounce at 55k — every login used to trigger a full disk scan and freeze/crash the host.
   accountsBroadcastTimer = setTimeout(() => {
     flushAccountStatsBroadcast().catch(() => {});
-  }, 2_500);
+  }, ACCOUNTS_BROADCAST_DEBOUNCE_MS);
 }
 
 async function flushAccountStatsBroadcast() {
   accountsBroadcastInFlight = true;
   accountsBroadcastAgain = false;
   try {
-    // Fresh rebuild once (cache was invalidated); do not force a second bust.
-    const accounts = await listAccounts();
+    // Debounced full rebuild (at most ~every 15s during bulk) — never per-login.
+    const accounts = await rebuildAccountsList();
+    lastAccountStats = computeAccountStats(accounts);
     broadcast('account-stats', {
-      ...computeAccountStats(accounts),
+      ...lastAccountStats,
       seq: ++accountsStatsSeq,
     });
   } catch {
@@ -394,15 +402,32 @@ async function flushAccountStatsBroadcast() {
     clearTimeout(accountsBroadcastTimer);
     accountsBroadcastTimer = setTimeout(() => {
       flushAccountStatsBroadcast().catch(() => {});
-    }, 2_500);
+    }, ACCOUNTS_BROADCAST_DEBOUNCE_MS);
   }
 }
 
 
 
-app.get('/api/accounts/stats', async (_req, res) => {
-  const accounts = await listAccounts();
-  res.json(computeAccountStats(accounts));
+app.get('/api/accounts/stats', async (req, res) => {
+  const wantFresh = req.query.fresh === '1' || req.query.fresh === 'true';
+  if (!wantFresh && lastAccountStats) {
+    return res.json({ ...lastAccountStats, stale: true });
+  }
+  if (!wantFresh) {
+    const cached = peekAccountsCache();
+    if (cached) {
+      lastAccountStats = computeAccountStats(cached);
+      return res.json({ ...lastAccountStats, stale: true });
+    }
+  }
+  try {
+    const accounts = wantFresh ? await rebuildAccountsList() : await listAccounts();
+    lastAccountStats = computeAccountStats(accounts);
+    res.json(lastAccountStats);
+  } catch (err) {
+    if (lastAccountStats) return res.json({ ...lastAccountStats, stale: true, error: err.message });
+    res.status(503).json({ error: err.message || 'Stats unavailable' });
+  }
 });
 
 app.get('/api/groups', (_req, res) => {
@@ -1125,32 +1150,30 @@ app.get('/api/events', (req, res) => {
 
   sseClients.add(res);
 
-  listAccounts({ bustCache: true })
+  const connectedPayload = {
+    jobs: listSummaries({ limit: 100 }),
+    jobStats: jobStats(),
+    queue: getQueueStatus(),
+    smartRefresh: getSmartRefreshStatus(),
+    proxy: proxyStatusPayload(),
+  };
+  if (lastAccountStats) {
+    connectedPayload.accountStats = { ...lastAccountStats, seq: accountsStatsSeq };
+  }
+  res.write(`event: connected\ndata: ${JSON.stringify(connectedPayload)}\n\n`);
+
+  // Refresh stats in background — never block SSE connect on a 55k disk scan.
+  listAccounts()
     .then((accounts) => {
-      res.write(
-        `event: connected\ndata: ${JSON.stringify({
-          jobs: listSummaries({ limit: 100 }),
-          jobStats: jobStats(),
-          queue: getQueueStatus(),
-          accountStats: { ...computeAccountStats(accounts), seq: ++accountsStatsSeq },
-          smartRefresh: getSmartRefreshStatus(),
-          proxy: proxyStatusPayload(),
-        })}\n\n`
-      );
+      lastAccountStats = computeAccountStats(accounts);
+      const payload = { ...lastAccountStats, seq: ++accountsStatsSeq };
+      try {
+        res.write(`event: account-stats\ndata: ${JSON.stringify(payload)}\n\n`);
+      } catch {
+        // client gone
+      }
     })
-    .catch(() => {
-      res.write(
-        `event: connected\ndata: ${JSON.stringify({
-          jobs: listSummaries({ limit: 100 }),
-          jobStats: jobStats(),
-          queue: getQueueStatus(),
-          smartRefresh: getSmartRefreshStatus(),
-          proxy: proxyStatusPayload(),
-        })}\n\n`
-      );
-    });
-
-
+    .catch(() => {});
 
   req.on('close', () => sseClients.delete(res));
 
