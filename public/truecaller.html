@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Truecaller — isolated from Outlook</title>
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    .iso-banner {
+      background: rgba(240, 180, 41, 0.1);
+      border: 1px solid rgba(240, 180, 41, 0.35);
+      color: var(--text);
+      border-radius: var(--radius);
+      padding: 0.9rem 1rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.9rem;
+    }
+    .iso-banner strong { color: var(--warn); }
+    .iso-banner ul { margin: 0.4rem 0 0 1.1rem; color: var(--muted); }
+    .tc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+    @media (max-width: 900px) { .tc-grid { grid-template-columns: 1fr; } }
+    .log-box {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      max-height: 280px;
+      overflow: auto;
+      white-space: pre-wrap;
+      color: var(--muted);
+    }
+    .result-box {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      max-height: 320px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .accounts-table td.mono { font-family: var(--mono); font-size: 0.78rem; }
+    .hint code { font-size: 0.8rem; }
+    .stat-card { cursor: pointer; }
+    .stat-card.active { outline: 1px solid var(--accent); }
+    .bulk-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      margin: 0.75rem 0;
+    }
+    .bulk-toolbar input[type="number"] {
+      width: 7rem;
+    }
+    .header-controls .proxy-profile-select { max-width: 16rem; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div>
+          <h1>Truecaller</h1>
+          <p class="subtitle">Isolated Microsoft SSO signup · own proxy · own token store</p>
+        </div>
+      </div>
+      <div class="header-controls">
+        <a href="/" class="btn ghost header-link">Outlook dashboard</a>
+        <select id="proxyPreset" class="proxy-profile-select" title="Truecaller proxy only — does not change Outlook login">
+          <option value="huawei-old">Huawei old</option>
+          <option value="samsung-new">New Samsung</option>
+          <option value="residential-ipv4">Residential IPv4 sticky US</option>
+          <option value="residential-ipv4-rotating">Residential IPv4 rotating US</option>
+          <option value="residential-ipv4-me">Residential IPv4 rotating ME</option>
+          <option value="residential-ipv4-global">Residential IPv4 rotating global</option>
+          <option value="proxyscrape-residential">New Residential (ProxyScrape)</option>
+          <option value="datacenter-ipv4-global">Datacenter IPv4 rotating global</option>
+          <option value="datacenter-ipv4-owl-us">Datacenter IPv4 owl proxy US</option>
+          <option value="aws-api">AWS API</option>
+        </select>
+        <label class="parallel-select-wrap" title="How many isolated Truecaller Camoufox signups run at once">
+          <span class="parallel-select-label">Parallel</span>
+          <select id="tcParallel" class="proxy-profile-select parallel-select">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="10">10</option>
+          </select>
+        </label>
+        <span class="status-pill" id="proxyPill"><span class="dot"></span><span>Proxy…</span></span>
+      </div>
+    </header>
+
+    <div class="iso-banner">
+      <strong>Do not click 53k accounts one by one.</strong> Filter, then queue the matching set. This tab cannot touch Outlook profiles, cookies, or the main login queue. Signup aborts if Microsoft asks for a password or MFA.
+      <ul>
+        <li><strong>Sign up all matching</strong> queues every Outlook session that matches the current filters (typically “not signed up”).</li>
+        <li>Pause or cancel remaining work anytime. Running Camoufox jobs finish the current account.</li>
+        <li>Thunderbird IMAP tokens cannot sign in to Truecaller. Browser SSO cookies are required.</li>
+      </ul>
+    </div>
+
+    <div id="queueBanner" class="queue-banner-wrap"></div>
+
+    <section class="card">
+      <div class="jobs-header">
+        <h2>Fleet</h2>
+        <div class="jobs-header-actions">
+          <button type="button" class="btn ghost" id="pauseQueueBtn">Pause</button>
+          <button type="button" class="btn ghost" id="resumeQueueBtn">Resume</button>
+          <button type="button" class="btn ghost" id="cancelQueueBtn">Cancel remaining</button>
+        </div>
+      </div>
+      <div class="account-stats-grid" id="tcStatsGrid">
+        <div class="stat-card total" data-status="all"><span class="stat-num" id="statEligible">0</span><span class="stat-label">Eligible sessions</span></div>
+        <div class="stat-card needs" data-status="not_signed_up"><span class="stat-num" id="statNotSigned">0</span><span class="stat-label">Not signed up</span></div>
+        <div class="stat-card available" data-status="signed_up"><span class="stat-num" id="statSigned">0</span><span class="stat-label">Signed up</span></div>
+        <div class="stat-card mfa" data-status="expired"><span class="stat-num" id="statExpired">0</span><span class="stat-label">Token expired</span></div>
+        <div class="stat-card failed" data-status="failed"><span class="stat-num" id="statFailed">0</span><span class="stat-label">Failed</span></div>
+        <div class="stat-card not-logged-in" data-status=""><span class="stat-num" id="statNoSession">0</span><span class="stat-label">No Outlook session</span></div>
+        <div class="stat-card total" data-status=""><span class="stat-num" id="statOutlook">0</span><span class="stat-label">Outlook total</span></div>
+      </div>
+      <p class="hint">Eligible = already logged into Outlook (SSO cookies exist). Accounts with no Outlook session cannot Truecaller cookie-SSO. Tokens last ~31 days — use <strong>Refresh expired</strong> after that.</p>
+    </section>
+
+    <main class="tc-grid">
+      <section class="card form-card">
+        <h2>Custom Truecaller proxy</h2>
+        <p class="hint">Optional. Preset dropdown above copies the same URLs as Outlook, but only into this tab. Format <code>http://user:pass@host:port</code> or SOCKS.</p>
+        <label>
+          Proxy URL
+          <input type="password" id="proxyUrl" placeholder="http://user:pass@gw.example.com:823" autocomplete="off" />
+        </label>
+        <button type="button" class="btn primary" id="saveProxyBtn">Save custom URL</button>
+        <p class="hint" id="proxySaved"></p>
+      </section>
+
+      <section class="card form-card">
+        <h2>Search with a Truecaller token</h2>
+        <label>
+          Account email
+          <input type="text" id="searchEmail" placeholder="already-signed-up@outlook.com" list="searchEmailList" />
+          <datalist id="searchEmailList"></datalist>
+        </label>
+        <label>
+          Country (ISO)
+          <input type="text" id="searchCountry" placeholder="jo" maxlength="2" />
+        </label>
+        <label>
+          Number
+          <input type="text" id="searchNumber" placeholder="795910089" />
+        </label>
+        <button type="button" class="btn secondary" id="searchBtn">Search</button>
+        <div class="result-box" id="searchResult">No search yet.</div>
+      </section>
+
+      <section class="card jobs-card" style="grid-column: 1 / -1;">
+        <div class="jobs-header">
+          <h2>Account management</h2>
+          <div class="jobs-header-actions">
+            <button type="button" class="btn ghost" id="refreshBtn">Refresh page</button>
+          </div>
+        </div>
+        <div class="group-toolbar">
+          <input type="text" id="searchInput" placeholder="Search email..." />
+          <select id="groupFilter"><option value="">All groups</option></select>
+          <select id="statusFilter">
+            <option value="not_signed_up">Not signed up</option>
+            <option value="">All eligible</option>
+            <option value="signed_up">Signed up</option>
+            <option value="expired">Token expired</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div class="bulk-toolbar">
+          <button type="button" class="btn primary" id="signupMatchingBtn">Sign up all matching</button>
+          <button type="button" class="btn secondary" id="signupSelectedBtn">Sign up selected on this page</button>
+          <button type="button" class="btn secondary" id="refreshExpiredBtn">Refresh expired</button>
+          <button type="button" class="btn ghost" id="refreshSelectedBtn">Refresh selected</button>
+          <label class="hint">Cap (optional) <input type="number" id="queueLimit" min="0" placeholder="all" /></label>
+        </div>
+        <p class="hint" id="pageHint">Loading…</p>
+        <div class="accounts-table-wrap">
+          <table class="accounts-table" id="eligibleTable">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectPage" title="Select this page" /></th>
+                <th>Email</th>
+                <th>Group</th>
+                <th>Outlook</th>
+                <th>Truecaller</th>
+                <th>Expires</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="eligibleBody">
+              <tr><td colspan="7" class="empty">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="accounts-pagination-wrap">
+          <div class="accounts-pagination">
+            <span id="pageInfo">—</span>
+            <div class="accounts-page-actions">
+              <button type="button" class="btn ghost" id="prevPageBtn">Prev</button>
+              <span class="accounts-page-num" id="pageNum">1 / 1</span>
+              <button type="button" class="btn ghost" id="nextPageBtn">Next</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card jobs-card" style="grid-column: 1 / -1;">
+        <h2>Job log</h2>
+        <div class="log-box" id="jobLog">Waiting…</div>
+      </section>
+    </main>
+  </div>
+  <script src="/truecaller.js"></script>
+</body>
+</html>

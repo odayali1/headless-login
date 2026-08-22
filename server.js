@@ -81,6 +81,7 @@ import { createLoginQueue } from './lib/login-queue.js';
 import { requireApiKey } from './lib/api-auth.js';
 
 import { createApiV1Router } from './lib/api-v1.js';
+import { createTruecallerRouter } from './lib/truecaller/routes.js';
 
 import { createRefreshJobQueue } from './lib/refresh-job.js';
 
@@ -700,7 +701,7 @@ app.use(
 
 );
 
-
+app.use('/api/truecaller', createTruecallerRouter());
 
 const zipImportBody = express.raw({
 
