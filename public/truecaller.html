@@ -57,6 +57,14 @@
       width: 7rem;
     }
     .header-controls .proxy-profile-select { max-width: 16rem; }
+    .job-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.8rem;
+    }
+    .job-head { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+    .jobs-list { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
   </style>
 </head>
 <body>
@@ -108,6 +116,8 @@
     </div>
 
     <div id="queueBanner" class="queue-banner-wrap"></div>
+    <p class="hint" id="liveHint">Live log: waiting for Truecaller jobs. Coolify logs use the prefix <code>[truecaller:email]</code> — Outlook <code>[smart-refresh]</code> lines are a different queue.</p>
+    <div id="jobsList" class="jobs-list"></div>
 
     <section class="card">
       <div class="jobs-header">
@@ -196,12 +206,13 @@
                 <th>Group</th>
                 <th>Outlook</th>
                 <th>Truecaller</th>
+                <th>Last error</th>
                 <th>Expires</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="eligibleBody">
-              <tr><td colspan="7" class="empty">Loading…</td></tr>
+              <tr><td colspan="8" class="empty">Loading…</td></tr>
             </tbody>
           </table>
         </div>

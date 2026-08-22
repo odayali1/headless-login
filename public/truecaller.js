@@ -9,6 +9,61 @@ const filters = {
 };
 
 let lastReload = 0;
+const jobsById = new Map();
+let seenLogKeys = new Set();
+
+function jobLine(job) {
+  const last = job.lastLog || (job.logs && job.logs[job.logs.length - 1]);
+  return last
+    ? `[${job.email}] ${last.step}: ${last.message}`
+    : `[${job.email}] ${job.status}: ${job.message}`;
+}
+
+function ingestJob(job) {
+  if (!job?.id) return;
+  const prev = jobsById.get(job.id);
+  jobsById.set(job.id, { ...prev, ...job, logs: job.logs || prev?.logs || [] });
+  const lines = job.logs?.length
+    ? job.logs.map((l) => `[${job.email}] ${l.step}: ${l.message}`)
+    : [jobLine(job)];
+  for (const line of lines) {
+    if (seenLogKeys.has(line)) continue;
+    seenLogKeys.add(line);
+    appendLog(line);
+  }
+  if (seenLogKeys.size > 800) seenLogKeys = new Set([...seenLogKeys].slice(-400));
+  renderJobs();
+}
+
+function renderJobs() {
+  const box = $('jobsList');
+  if (!box) return;
+  const list = [...jobsById.values()].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  if (!list.length) {
+    box.innerHTML = '<p class="empty">No Truecaller jobs yet. Queue signups above — this list is independent of Outlook smart-refresh.</p>';
+    return;
+  }
+  box.innerHTML = list
+    .slice(0, 30)
+    .map((j) => {
+      const last = j.lastLog || (j.logs && j.logs[j.logs.length - 1]);
+      const detail = last ? `${last.step}: ${last.message}` : j.message || '';
+      return `<div class="job-card">
+        <div class="job-head">
+          <span class="badge ${escapeHtml(j.status)}">${escapeHtml(j.status)}</span>
+          <span class="mono">${escapeHtml(j.email)}</span>
+        </div>
+        <p class="hint">${escapeHtml(detail)}</p>
+      </div>`;
+    })
+    .join('');
+}
+
+async function loadJobs() {
+  const data = await api('/jobs');
+  renderQueue(data.queue);
+  for (const job of data.jobs || []) ingestJob(job);
+}
 
 function escapeHtml(s) {
   return String(s ?? '')
@@ -135,17 +190,19 @@ async function loadEligible() {
   renderQueue(data.queue);
   const body = $('eligibleBody');
   if (!data.accounts.length) {
-    body.innerHTML = '<tr><td colspan="7" class="empty">No accounts match this filter.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" class="empty">No accounts match this filter. Failed signups are under the Failed card — they leave this “not signed up” list.</td></tr>';
   } else {
     body.innerHTML = data.accounts
       .map((a) => {
         const exp = a.truecaller?.expiresAt ? new Date(a.truecaller.expiresAt).toLocaleString() : '—';
+        const err = a.truecaller?.lastError || '';
         return `<tr>
           <td><input type="checkbox" data-email="${escapeHtml(a.email)}" /></td>
           <td class="mono">${escapeHtml(a.email)}</td>
           <td>${escapeHtml(a.group || '—')}</td>
           <td>${escapeHtml(a.outlookHealth || a.outlookStatus || 'session')}</td>
           <td>${tcBadge(a)}</td>
+          <td class="mono" title="${escapeHtml(err)}">${escapeHtml(err ? err.slice(0, 140) : '—')}</td>
           <td>${escapeHtml(exp)}</td>
           <td>
             <button type="button" class="btn small" data-copy="${escapeHtml(a.email)}" ${a.truecaller?.hasToken ? '' : 'disabled'}>Copy token</button>
@@ -159,7 +216,7 @@ async function loadEligible() {
   $('pageInfo').textContent = `${data.total.toLocaleString()} matching · showing ${data.accounts.length}`;
   $('pageHint').textContent =
     filters.status === 'not_signed_up'
-      ? `${(data.stats?.not_signed_up ?? data.total).toLocaleString()} Outlook sessions have no Truecaller token. Use Sign up all matching — do not click one by one.`
+      ? `${(data.stats?.not_signed_up ?? data.total).toLocaleString()} Outlook sessions have no Truecaller token. Failed signups leave this list — click the Failed card to see the error. Coolify: filter [truecaller:].`
       : `${data.total.toLocaleString()} accounts match the current filters.`;
   filters.page = data.page;
   $('prevPageBtn').disabled = data.page <= 1;
@@ -193,6 +250,7 @@ async function queueWork(path, body, confirmCount) {
   const data = await api(path, { method: 'POST', body: JSON.stringify(body) });
   appendLog(`Queued ${data.queued} ${path.replace('/', '')} job(s). Isolated Camoufox — Outlook profiles will not be written.`);
   renderQueue(data.queue);
+  loadJobs().catch((err) => appendLog(err.message));
 }
 
 async function previewThenQueue(path, body) {
@@ -391,32 +449,49 @@ document.addEventListener('click', async (ev) => {
   }
 });
 
-const es = new EventSource('/api/truecaller/events');
-es.addEventListener('queue', (ev) => {
-  try {
-    renderQueue(JSON.parse(ev.data));
-  } catch {
-    // ignore
-  }
-});
-es.addEventListener('job', (ev) => {
-  try {
-    const job = JSON.parse(ev.data);
-    const line = job.lastLog
-      ? `[${job.email}] ${job.lastLog.step}: ${job.lastLog.message}`
-      : `[${job.email}] ${job.status}: ${job.message}`;
-    appendLog(line);
-    if (job.status === 'success' || job.status === 'failed') {
-      const now = Date.now();
-      if (now - lastReload > 4000) {
-        lastReload = now;
-        loadEligible().catch(() => {});
-      }
+function connectEvents() {
+  const es = new EventSource('/api/truecaller/events');
+  es.addEventListener('queue', (ev) => {
+    try {
+      renderQueue(JSON.parse(ev.data));
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
-  }
-});
+  });
+  es.addEventListener('jobs', (ev) => {
+    try {
+      const data = JSON.parse(ev.data);
+      for (const job of data.jobs || []) ingestJob(job);
+    } catch {
+      // ignore
+    }
+  });
+  es.addEventListener('job', (ev) => {
+    try {
+      const job = JSON.parse(ev.data);
+      ingestJob(job);
+      if (job.status === 'success' || job.status === 'failed') {
+        const now = Date.now();
+        if (now - lastReload > 4000) {
+          lastReload = now;
+          loadEligible().catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+  });
+  es.onerror = () => {
+    const hint = $('liveHint');
+    if (hint) hint.textContent = 'Live stream interrupted — still polling Truecaller jobs every 2s. Filter Coolify for [truecaller:].';
+  };
+}
+
+connectEvents();
+setInterval(() => {
+  loadJobs().catch(() => {});
+}, 2000);
 
 loadStatus().catch((err) => appendLog(err.message));
+loadJobs().catch((err) => appendLog(err.message));
 loadEligible().catch((err) => appendLog(err.message));
