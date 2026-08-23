@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseSearchHtml, buildSearchCookieHeader } from '../lib/truecaller/search.js';
+import { parseSearchHtml, buildSearchCookieHeader, playwrightTcCookies } from '../lib/truecaller/search.js';
 
 const html = `
 <title>Free Reverse Phone Number Lookup by Truecaller</title>
@@ -64,5 +64,12 @@ const cookie = buildSearchCookieHeader({
 });
 assert.equal(cookie, 'tc_user=' + encodeURIComponent(JSON.stringify({ token: 'aaa.bbb.ccc' })));
 assert.ok(cookie.includes('%7B%22token%22%3A%22aaa.bbb.ccc%22%7D'));
+
+const pw = playwrightTcCookies({
+  tc_jwt: 'aaa.bbb.ccc',
+  tc_user_cookie: '',
+  cookies_json: JSON.stringify([{ name: 'tc_foo', value: '1', domain: '.truecaller.com', path: '/' }]),
+});
+assert.ok(pw.every((c) => (c.url && !c.path && !c.domain) || (c.domain && c.path && !c.url)));
 
 console.log('truecaller search parse ok');
