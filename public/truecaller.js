@@ -421,7 +421,7 @@ $('cancelQueueBtn').addEventListener('click', async () => {
 });
 
 $('searchBtn').addEventListener('click', async () => {
-  $('searchResult').textContent = 'Searching…';
+    $('searchResult').textContent = 'Searching (isolated browser, can take a minute)…';
   try {
     const data = await api('/search', {
       method: 'POST',
