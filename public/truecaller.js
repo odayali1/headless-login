@@ -431,7 +431,22 @@ $('searchBtn').addEventListener('click', async () => {
         number: $('searchNumber').value,
       }),
     });
-    $('searchResult').textContent = JSON.stringify(data, null, 2);
+    if (data.found && data.result?.name) {
+      const r = data.result;
+      $('searchResult').textContent = [
+        `Found: ${r.name}`,
+        r.phone ? `Phone: ${r.phone}` : '',
+        r.email ? `Email: ${r.email}` : '',
+        r.carrier ? `Carrier: ${r.carrier}` : '',
+        r.address ? `Address: ${r.address}` : '',
+        '',
+        JSON.stringify(data, null, 2),
+      ]
+        .filter((line, i, arr) => line !== '' || arr[i - 1] !== '')
+        .join('\n');
+    } else {
+      $('searchResult').textContent = JSON.stringify(data, null, 2);
+    }
   } catch (err) {
     $('searchResult').textContent = err.message;
   }

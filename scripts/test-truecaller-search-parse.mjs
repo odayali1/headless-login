@@ -44,6 +44,12 @@ assert.equal(cmsOnlyLimit.limitExceeded, false, 'CMS copy is not a real limit');
 assert.equal(cmsOnlyLimit.found, true);
 assert.equal(cmsOnlyLimit.name, 'Found Name');
 
+const encodedOnly = parseSearchHtml(
+  'nav Save contact href="data:text/vcard;charset=utf-8,BEGIN%3AVCARD%0D%0AFN%3A%20Found%20Name%0D%0AEND%3AVCARD"'
+);
+assert.equal(encodedOnly.found, true);
+assert.equal(encodedOnly.name, 'Found Name');
+
 const realLimit = parseSearchHtml(`
 <title>Free Reverse Phone Number Lookup by Truecaller</title>
 <main><h3>Oops! Search limit exceeded.</h3><p>Download Truecaller</p></main>
