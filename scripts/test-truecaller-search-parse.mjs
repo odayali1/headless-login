@@ -31,4 +31,24 @@ const empty = parseSearchHtml(
 assert.equal(empty.found, false);
 assert.equal(empty.name, null);
 
+const cmsOnlyLimit = parseSearchHtml(`
+<title>Free Reverse Phone Number Lookup by Truecaller</title>
+<button>Log out</button>
+<astro-island props="{&quot;limit_exceeded_header_text&quot;:[1,[[0,{&quot;text&quot;:[0,&quot;Oops! Search limit exceeded.&quot;]}]]]}" opts="{&quot;name&quot;:&quot;X&quot;}"></astro-island>
+<article>
+  <div class="flex-none font-bold break-all sm:text-xl"> Found Name </div>
+  <a href="data:text/vcard;charset=utf-8,BEGIN%3AVCARD%0D%0AFN%3A%20Found%20Name%0D%0AEND%3AVCARD">Save contact</a>
+</article>
+`);
+assert.equal(cmsOnlyLimit.limitExceeded, false, 'CMS copy is not a real limit');
+assert.equal(cmsOnlyLimit.found, true);
+assert.equal(cmsOnlyLimit.name, 'Found Name');
+
+const realLimit = parseSearchHtml(`
+<title>Free Reverse Phone Number Lookup by Truecaller</title>
+<main><h3>Oops! Search limit exceeded.</h3><p>Download Truecaller</p></main>
+`);
+assert.equal(realLimit.limitExceeded, true);
+assert.equal(realLimit.found, false);
+
 console.log('truecaller search parse ok');
