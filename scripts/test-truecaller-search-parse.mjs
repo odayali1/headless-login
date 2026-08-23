@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { parseSearchHtml } from '../lib/truecaller/search.js';
+import { parseSearchHtml, buildSearchCookieHeader } from '../lib/truecaller/search.js';
 
 const html = `
 <title>Free Reverse Phone Number Lookup by Truecaller</title>
@@ -56,5 +56,13 @@ const realLimit = parseSearchHtml(`
 `);
 assert.equal(realLimit.limitExceeded, true);
 assert.equal(realLimit.found, false);
+
+const cookie = buildSearchCookieHeader({
+  tc_jwt: 'aaa.bbb.ccc',
+  tc_user_cookie: '',
+  cookies_json: '[]',
+});
+assert.equal(cookie, 'tc_user=' + encodeURIComponent(JSON.stringify({ token: 'aaa.bbb.ccc' })));
+assert.ok(cookie.includes('%7B%22token%22%3A%22aaa.bbb.ccc%22%7D'));
 
 console.log('truecaller search parse ok');
