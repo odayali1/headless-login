@@ -2,16 +2,20 @@ services:
   headless-login:
     build: .
     ports:
-      - "3847:3847"
+      # Main App Port (Defaults to 3847)
+      - '${HOST_PORT:-3847}:3847'
+      # Extra Port 1 (Defaults to 8080)
+      - '${EXTRA_PORT_1:-8080}:8080'
+      # Extra Port 2 (Defaults to 9090)
+      - '${EXTRA_PORT_2:-9090}:9090'
     environment:
       - PORT=3847
       - DATA_DIR=/app/data
-      - CREDENTIALS_KEY=${CREDENTIALS_KEY}
+      - 'CREDENTIALS_KEY=${CREDENTIALS_KEY}'
       - CAMOUFOX_INSTALL_DIR=/app/data/camoufox
       - MOZ_DISABLE_CONTENT_SANDBOX=1
       - MOZ_DISABLE_GMP_SANDBOX=1
     volumes:
-      - headless-data:/app/data
-
+      - 'headless-data:/app/data'
 volumes:
-  headless-data:
+  headless-data: null
