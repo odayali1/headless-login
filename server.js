@@ -387,8 +387,8 @@ async function flushAccountStatsBroadcast() {
   accountsBroadcastInFlight = true;
   accountsBroadcastAgain = false;
   try {
-    // Never force a 55k disk scan here — that starved cookie SSO until refresh stalled for days.
-    const accounts = await listAccounts();
+    // Debounced full rebuild (at most ~every 15s during bulk) — never per-login.
+    const accounts = await rebuildAccountsList();
     lastAccountStats = computeAccountStats(accounts);
     broadcast('account-stats', {
       ...lastAccountStats,
